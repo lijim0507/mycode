@@ -1,0 +1,171 @@
+# XENO嵌入式软件编程规范.clang-format
+# 版本: 1.1
+# 适用于嵌入式 C 语言开发
+
+# 基础风格：Google
+BasedOnStyle: Google
+
+Language: Cpp
+
+# ============== 基础缩进与行宽 ==============
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# 最大行宽：132 字符
+ColumnLimit: 132
+
+# 续行缩进：4 空格
+ContinuationIndentWidth: 4
+
+# ============== 大括号风格 ==============
+# Allman风格（大括号单独一行）
+BreakBeforeBraces: Allman
+
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: true # if/for/while/switch 后换行
+  AfterEnum: true
+  AfterFunction: true # 函数定义后换行
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: true
+  BeforeCatch: true
+  BeforeElse: true # else 前换行
+  IndentBraces: false
+  SplitEmptyFunction: false # 空函数也保持 Allman 风格
+
+# ============== 代码紧凑性 ==============
+# 禁止将短代码块、短函数、短 if/循环放在单行
+# if、for、do、while、case、switch、default 等语句独占一行
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+# ============== Switch-Case 缩进 ==============
+# case 标签相对于 switch 缩进
+IndentCaseLabels: true
+
+# ============== 指针对齐 ==============
+# 左对齐
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+# ============== 空格规则 ==============
+# if/for/while/switch 等与后面的括号间加空格
+SpaceBeforeParens: ControlStatements
+
+# 圆括号内不加空格
+SpacesInParentheses: false
+SpaceInEmptyParentheses: false
+
+# 方括号内不加空格
+SpacesInSquareBrackets: false
+
+# C 风格类型转换后不加空格
+SpaceAfterCStyleCast: false
+
+# 逻辑非运算符后不加空格
+SpaceAfterLogicalNot: false
+
+# 赋值运算符前加空格
+SpaceBeforeAssignmentOperators: true
+
+# 行尾注释前加 1 个空格
+SpacesBeforeTrailingComments: 1
+
+# 模板/泛型尖括号内不加空格（C++ 特性，保留）
+SpacesInAngles: false
+
+# 容器/列表字面量内加空格（如数组初始化 { 1, 2, 3 }）
+SpacesInContainerLiterals: true
+
+# 其他空格设置
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceAfterTemplateKeyword: true
+
+# ============== 对齐与换行 ==============
+# 对齐操作数
+AlignOperands: true
+
+# 对齐行尾注释
+AlignTrailingComments: true
+
+# 不对齐连续声明
+AlignConsecutiveDeclarations: false
+
+# 多行宏定义的反斜杠左对齐
+AlignEscapedNewlines: Left
+
+# 不在二元操作符前换行
+BreakBeforeBinaryOperators: None
+
+# 在三元操作符前换行
+BreakBeforeTernaryOperators: true
+
+# 构造函数初始化列表在冒号前换行（C++ 特性，保留默认值）
+BreakConstructorInitializers: BeforeColon
+
+# 函数参数打包策略（允许适当打包，避免每个参数都换行）
+BinPackArguments: true
+BinPackParameters: true
+
+# ============== 空行与格式 ==============
+# 最大连续空行数
+MaxEmptyLinesToKeep: 1
+
+# 不保留代码块开头的空行
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# 重新格式化注释
+ReflowComments: true
+
+# ============== 包含文件排序 ==============
+# 相同的声明类型放置在同一块区域
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  # 系统头文件（尖括号包含的 .h 文件）
+  - Regex: '^<.*\.h>'
+    Priority: 1
+  # 其他系统头文件
+  - Regex: "^<.*"
+    Priority: 2
+  # 用户头文件
+  - Regex: ".*"
+    Priority: 3
+
+# 识别主文件的正则表达式
+IncludeIsMainRegex: "(Test)?$"
+
+# ============== 命名空间与缩进偏移 ==============
+# C 语言无访问修饰符，以下设置保留但主要用于 C++ 兼容性
+# 默认 NamespaceIndentation: None（不缩进），保持即可
+NamespaceIndentation: None
+CompactNamespaces: false
+FixNamespaceComments: true
+
+# 不缩进被包装的函数名
+IndentWrappedFunctionNames: false
+
+# 访问修饰符偏移（C++ 类中 public/private 位置）
+AccessModifierOffset: -4
+
+# ============== 标准版本 ==============
+# 使用 Cpp11 标准
+Standard: Cpp11
+
+# ============== 行结束符 ==============
+# 使用 Unix 风格 LF
+UseCRLF: false
+
+# ============== 排序声明 ==============
+# 对 using 声明排序（C 语言中不适用，但保留）
+SortUsingDeclarations: true

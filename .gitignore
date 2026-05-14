@@ -1,0 +1,11 @@
+build/
+sdkconfig
+sdkconfig.old
+.clangd
+.vscode/*
+!.vscode/launch.json
+.agents/
+AGENTS.md
+release/
+dependencies.lock
+.cache/
