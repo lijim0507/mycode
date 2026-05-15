@@ -1,19 +1,77 @@
-/*
- * SPDX-FileCopyrightText: 2010-2022 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: CC0-1.0
- */
+/****************************************************************************/
+/*								Includes									*/
+/****************************************************************************/
+#include "main.h"
+/****************************************************************************/
+/*								Macros										*/
+/****************************************************************************/
 
-#include <stdio.h>
-#include <inttypes.h>
-#include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_chip_info.h"
-#include "esp_flash.h"
-#include "esp_system.h"
+/****************************************************************************/
+/*								Typedefs									*/
+/****************************************************************************/
 
+/****************************************************************************/
+/*						Prototypes Of Local Functions						*/
+/****************************************************************************/
+
+/****************************************************************************/
+/*							Global Variables								*/
+/****************************************************************************/
+
+/****************************************************************************/
+/*							Exported Functions    						    */
+/****************************************************************************/
 void app_main(void)
 {
     printf("Hello world!\n");
 }
+
+
+//二值信号量句柄--demo
+osSemaphoreId_t demo_semaphore_handle;
+
+/**
+ * @brief 二值信号量操作封装示例
+ * @param op 操作类型，取值为SEMAPHORE_OP_GIVE或SEMAPHORE_OP_TAKE
+ * 
+ */
+uint8_t demo_semaphore_operations(semaphore_operation_t op) 
+{
+    /* Local variables */
+    uint8_t rc = 0;
+
+    switch (op) 
+    {
+        case SEMAPHORE_OP_GIVE:
+            rc = xSemaphoreGive(demo_semaphore_handle);
+            if (rc != pdTRUE) 
+            {
+                ESP_LOGE(TAG, "failed to give semaphore");
+                return -2;
+            }
+            break;
+
+        case SEMAPHORE_OP_TAKE:
+            rc = xSemaphoreTake(demo_semaphore_handle, portMAX_DELAY);
+            if (rc != pdTRUE) 
+            {
+                ESP_LOGE(TAG, "failed to take semaphore");
+                return -3;
+            }
+            break;
+
+        case SEMAPHORE_OP_NULL:
+        default:
+            ESP_LOGE(TAG, "invalid semaphore operation");
+            return -4;
+    }
+    return 0;
+}
+/****************************************************************************/
+/*							Static Functions    						    */
+/****************************************************************************/
+
+/****************************************************************************/
+/*								EOF											*/
+/****************************************************************************/
+
