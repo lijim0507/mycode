@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "ff.h"
+#include "ffconf.h"
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
@@ -24,6 +26,7 @@ typedef enum {
     UDISK_NO_DISK = 5,
     UDISK_QUEUE_FULL = 6
 } udisk_state_t;
+
 
 typedef enum {
 	FR_OK = 0,				/* (0) Succeeded */
@@ -56,6 +59,13 @@ typedef enum {
 /*							Exported Functions								*/
 /****************************************************************************/
 void drv_udisk_init(void);
+udisk_state_t drv_udisk_file_open(FIL *p_file, const char *p_filename, uint8_t mode);
+udisk_state_t drv_udisk_file_close(FIL *p_file);
+udisk_state_t drv_udisk_file_write(FIL *p_file, const void *p_data, uint32_t size);
+udisk_state_t drv_udisk_file_read(FIL *p_file, void *p_data, uint32_t size);
+udisk_state_t drv_udisk_file_sync(FIL *p_file);
+udisk_state_t drv_udisk_file_rename(const char *old_filepath, const char *new_filepath);
+uint32_t drv_udisk_get_time(void);
 
 
 #endif
