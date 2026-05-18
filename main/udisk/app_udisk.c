@@ -49,11 +49,17 @@ typedef struct _app_data_file_name_t
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
 static void app_udisk_store_data_pack(void);
+static uint16_t app_udisk_get_serial_number(void);
+static void app_udisk_reset_data_file_name(void);
+static void app_udisk_update_data_file_name(void);
+
+
+
 
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
-static FIL *p_data_file = NULL;
+static FIL data_file_handler ;
 
 //存储数据结构体实例
 udisk_storage_data_t storage_data;
@@ -77,14 +83,14 @@ void app_udisk_init(void)
 {
 
     uint32_t file_number = 0;
-    FIL *p_num_file = NULL;
+    FIL num_file_handler ;
 
     drv_udisk_init();
 
-    if (drv_udisk_file_open(&p_num_file, NUMBER_FILE_NAME, FA_OPEN_ALWAYS | FA_WRITE | FA_READ) == UDISK_OK)
+    if (drv_udisk_file_open(&num_file_handler, NUMBER_FILE_NAME, FA_OPEN_ALWAYS | FA_WRITE | FA_READ) == UDISK_OK)
     {
-        drv_udisk_file_read(&p_num_file, &file_number, sizeof(file_number));
-        drv_udisk_file_close(&p_num_file);
+        drv_udisk_file_read(&num_file_handler, &file_number, sizeof(file_number));
+        drv_udisk_file_close(&num_file_handler);
     }
     else
     {
@@ -96,39 +102,41 @@ void app_udisk_init(void)
 /**
  * @brief udisk数据任务
  */
-void app_udisk_task(void *param)
+void app_udisk_task(void)
 {
     uint32_t write_count = 0;
     while (1)
     {
         app_udisk_store_data_pack();
 
-        if(1)
+        vTaskDelay(pdMS_TO_TICKS(1));
+        
+        if(drv_udisk_host_status() != UDISK_OK)
         {
-            //存储数据到文件
-            if(p_data_file != NULL)
-            {
-                if (drv_udisk_file_write(p_data_file, &storage_data, sizeof(udisk_storage_data_t)) == UDISK_OK)
-                {
-                    write_count++;
-                    drv_udisk_toggle_led();
-                }
+            app_udisk_init();
+            continue;
+        }
 
-                if (write_count >= UDISK_SYNC_COUNT)
+        //检测到文件系统，和usb链接后才进行数据存储
+        //存储数据到文件
+        if(drv_udisk_is_file_open(&data_file_handler))
+        {
+            if (drv_udisk_file_write(&data_file_handler, &storage_data, sizeof(udisk_storage_data_t)) == UDISK_OK)
+            {
+                write_count++;
+                // drv_udisk_toggle_led();
+            }
+
+            if (write_count >= UDISK_SYNC_COUNT)
+            {
+                if (drv_udisk_file_sync(&data_file_handler) == UDISK_OK)
                 {
-                    if (drv_udisk_file_sync(p_data_file) == UDISK_OK)
-                    {
-                        write_count = 0;
-                    }
+                    write_count = 0;
                 }
             }
         }
-        else
-        {
-            app_udisk_init();
-        }
 
-        vTaskDelay(pdMS_TO_TICKS(1));
+        
     }
     
 }
@@ -146,15 +154,16 @@ void app_udisk_create_data_file(void)
 
 
     //关闭之前打开的数据文件（如果有）
-    if(p_data_file != NULL)
+    if(drv_udisk_is_file_open(&data_file_handler))
     {
-        drv_udisk_file_close(&p_data_file);
+        drv_udisk_file_close(&data_file_handler);
     }
 
     app_udisk_reset_data_file_name();
 
     //更新chip id
-    chip_id = app_control_get_chip_id();
+    //chip_id = app_control_get_chip_id();
+    chip_id = 1234; // TODO: 临时写死，后续替换为实际芯片ID获取函数
     snprintf(data_file_name.chip_id, sizeof(data_file_name.chip_id), "%04 d", chip_id);
 
     //更新文件序列号
@@ -166,9 +175,13 @@ void app_udisk_create_data_file(void)
     data_file_name.chip_id, data_file_name.serial_number, data_file_name.mode, data_file_name.lable, data_file_name.end_character);
 
     //创建新数据文件并打开
-    if (drv_udisk_file_open(&p_data_file, filename, FA_OPEN_APPEND | FA_WRITE | FA_READ) != UDISK_OK)
+    if (drv_udisk_file_open(&data_file_handler, filename, FA_OPEN_APPEND | FA_WRITE | FA_READ) != UDISK_OK)
     {
-        //ESP_LOGE(TAG, "failed to create data file");
+        __nop();
+    }
+    else
+    {
+        __nop();
     }
 }
 
@@ -176,9 +189,15 @@ void app_udisk_create_data_file(void)
 void app_udisk_end_data_file(void)
 {
     
+    if(!drv_udisk_is_file_open(&data_file_handler))
+    {
+        return;
+    }
+
     app_udisk_update_data_file_name();
 
-    drv_udisk_file_close(&p_data_file);
+    drv_udisk_file_sync(&data_file_handler);
+    drv_udisk_file_close(&data_file_handler);
 
     app_udisk_reset_data_file_name();
 
@@ -217,18 +236,18 @@ void app_udisk_set_file_label(uint8_t label)
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
-static uint16_t app_udisk_get_serial_number()
+static uint16_t app_udisk_get_serial_number(void)
 {
     uint32_t file_number = 0;
     FIL *p_num_file = NULL;
 
-    if (drv_udisk_file_open(&p_num_file, NUMBER_FILE_NAME, FA_READ|FA_WRITE) == UDISK_OK)
+    if (drv_udisk_file_open(p_num_file, NUMBER_FILE_NAME, FA_READ|FA_WRITE) == UDISK_OK)
     {
-        drv_udisk_file_read(&p_num_file, &file_number, sizeof(file_number));
+        drv_udisk_file_read(p_num_file, &file_number, sizeof(file_number));
         file_number++;
-        drv_udisk_file_write(&p_num_file, &file_number, sizeof(file_number));
-        drv_udisk_file_sync(&p_num_file);
-        drv_udisk_file_close(&p_num_file);
+        drv_udisk_file_write(p_num_file, &file_number, sizeof(file_number));
+        drv_udisk_file_sync(p_num_file);
+        drv_udisk_file_close(p_num_file);
         return (uint16_t)--file_number;
     }
     else
@@ -254,6 +273,7 @@ static void app_udisk_update_data_file_name(void)
     char old_filename[FILENAME_MAX_SIZE] = {0};
     char new_filename[FILENAME_MAX_SIZE] = {0};
     uint16_t serial_num = 0;
+    uint8_t mode = 0;
 
     //获取当前文件序列号    
     snprintf(old_filename, FILENAME_MAX_SIZE, "%s_%s_%s_%s%s.dat", 
@@ -263,9 +283,9 @@ static void app_udisk_update_data_file_name(void)
     //更新文件 label label在uart接收到label事件中更新
     // app_udisk_set_file_label(uint8_t label);
 
-
+    mode = app_uart_get_assist_mode();
     //更新运动模式 mode 
-    switch (app_control_get_mode())
+    switch (app_uart_get_assist_mode())
     {
     case 1:
         snprintf(data_file_name.mode, sizeof(data_file_name.mode), "%04d", mode);
@@ -355,7 +375,7 @@ static void app_udisk_store_data_pack(void)
     storage_data.accel[2] = float_to_int8(accel_z, UDISK_ACCEL_MIN, UDISK_ACCEL_MAX);
 
     storage_data.mode_status = (uint8_t)app_control_get_state();
-    storage_data.time = drv_udisk_get_tick();
+    storage_data.time = drv_udisk_get_time();
     storage_data.left_pos_to_alg = app_control_get_left_pos_to_alg();
     storage_data.right_pos_to_alg = app_control_get_right_pos_to_alg();
     storage_data.hall_error_flags = 0;
