@@ -6,36 +6,40 @@
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
-#if 0    /* Hardware I2C */
+#if 0 /* Hardware I2C */
 
 #include "i2c.h"
 #define HardwareI2c
 
-#else       /* Software I2C */
+#else /* Software I2C */
 
 #include "swi2c.h"
 #define SoftwareI2c
 
 #endif
 
-#define EEPROM_PAGE_SIZE        16      /* Unit: Byte */
-#define EEPROM_MEMORY_SIZE      2048    /* Unit: Byte */
-#define EEPROM_PAGE_NUMBER      (EEPROM_MEMORY_SIZE / EEPROM_PAGE_SIZE)
-#define EEPROM_RW_TIMEOUT       3       /* Unit: ms */
+#define EEPROM_PAGE_SIZE 16     /* Unit: Byte */
+#define EEPROM_MEMORY_SIZE 2048 /* Unit: Byte */
+#define EEPROM_PAGE_NUMBER (EEPROM_MEMORY_SIZE / EEPROM_PAGE_SIZE)
+#define EEPROM_RW_TIMEOUT 3 /* Unit: ms */
 
-#define EEPROM_CONTROL_COMMAND  0xA0
-#define EEPROM_DEVICE_ADDRESS   0x00
+#define EEPROM_CONTROL_COMMAND 0xA0
+#define EEPROM_DEVICE_ADDRESS 0x00
 
-#define EEPROM_W_BIT            0x00
-#define EEPROM_R_BIT            0x01
+#define EEPROM_W_BIT 0x00
+#define EEPROM_R_BIT 0x01
 
-#define EEPROM_W_ADDRESS        (EEPROM_CONTROL_COMMAND + EEPROM_DEVICE_ADDRESS + EEPROM_W_BIT)
-#define EEPROM_R_ADDRESS        (EEPROM_CONTROL_COMMAND + EEPROM_DEVICE_ADDRESS + EEPROM_R_BIT)
+#define EEPROM_W_ADDRESS (EEPROM_CONTROL_COMMAND + EEPROM_DEVICE_ADDRESS + EEPROM_W_BIT)
+#define EEPROM_R_ADDRESS (EEPROM_CONTROL_COMMAND + EEPROM_DEVICE_ADDRESS + EEPROM_R_BIT)
 
-#define EEPROM_WP_PORT          GPIOB
-#define EEPROM_WP_PIN           GPIO_PIN_5
+#define EEPROM_WP_PORT GPIOB
+#define EEPROM_WP_PIN GPIO_PIN_5
 
-#define EEPROM_SET_WP(x)        do { HAL_GPIO_WritePin(EEPROM_WP_PORT, EEPROM_WP_PIN, (GPIO_PinState)x); } while (0)
+#define EEPROM_SET_WP(x)                                                    \
+    do                                                                      \
+    {                                                                       \
+        HAL_GPIO_WritePin(EEPROM_WP_PORT, EEPROM_WP_PIN, (GPIO_PinState)x); \
+    } while (0)
 
 /****************************************************************************/
 /*								Typedefs									*/
@@ -79,25 +83,25 @@ void eeprom_read_bytes(uint8_t address, uint8_t *read_buf, uint8_t read_size)
 {
     uint8_t temp1 = 0;
     uint8_t ack = 0;
-    uint8_t temp_address = 0;     /* Current read address */
+    uint8_t temp_address = 0; /* Current read address */
     uint8_t page_num = 0;
-    uint8_t page_counter = 0;     /* Total pages to read, current page counter */
+    uint8_t page_counter = 0; /* Total pages to read, current page counter */
 
     /* Check if address is aligned to page start (lower 4 bits == 0) */
-    page_num += ((address & 0x0F) == 0) ? 0 : 1;  /* Start page: is it aligned to page start? */
+    page_num += ((address & 0x0F) == 0) ? 0 : 1; /* Start page: is it aligned to page start? */
 
-    if (page_num == 0)  /* Start address is at page start */
+    if (page_num == 0) /* Start address is at page start */
     {
-        page_num += read_size / EEPROM_PAGE_SIZE;  /* Full page count */
+        page_num += read_size / EEPROM_PAGE_SIZE; /* Full page count */
     }
-    else  /* Start address is not at page start */
+    else /* Start address is not at page start */
     {
-        page_num += (read_size - (EEPROM_PAGE_SIZE - (address & 0x0F))) / EEPROM_PAGE_SIZE;  /* Full page count */
+        page_num += (read_size - (EEPROM_PAGE_SIZE - (address & 0x0F))) / EEPROM_PAGE_SIZE; /* Full page count */
     }
 
     if ((read_size - (EEPROM_PAGE_SIZE - (address & 0x0F))) > 0)
     {
-        page_num += ((read_size - (address & 0x0F)) % EEPROM_PAGE_SIZE == 0) ? 0 : 1;  /* Remaining page count */
+        page_num += ((read_size - (address & 0x0F)) % EEPROM_PAGE_SIZE == 0) ? 0 : 1; /* Remaining page count */
     }
 
     EEPROM_SET_WP(0);
@@ -151,11 +155,11 @@ void eeprom_read_bytes(uint8_t address, uint8_t *read_buf, uint8_t read_size)
             /* Send NACK when reaching page boundary or end of requested range */
             if (((temp_address & 0x0F) == 0) || (temp_address >= address + read_size))
             {
-                swi2c_send_ask(1);  /* NACK */
+                swi2c_send_ask(1); /* NACK */
             }
             else
             {
-                swi2c_send_ask(0);  /* ACK */
+                swi2c_send_ask(0); /* ACK */
             }
         } while (((temp_address % EEPROM_PAGE_SIZE) != 0) && (temp_address < (address + read_size)));
 
@@ -188,20 +192,20 @@ void eeprom_write_bytes(uint8_t address, uint8_t *write_buf, uint8_t write_size)
     uint8_t page_num = 0;
 
     /* Check if address is aligned to page start (lower 4 bits == 0) */
-    page_num += ((address & 0x0F) == 0) ? 0 : 1;  /* Start page: is it aligned to page start? */
+    page_num += ((address & 0x0F) == 0) ? 0 : 1; /* Start page: is it aligned to page start? */
 
-    if (page_num == 0)  /* Start address is at page start */
+    if (page_num == 0) /* Start address is at page start */
     {
-        page_num += write_size / EEPROM_PAGE_SIZE;  /* Full page count */
+        page_num += write_size / EEPROM_PAGE_SIZE; /* Full page count */
     }
-    else  /* Start address is not at page start */
+    else /* Start address is not at page start */
     {
-        page_num += (write_size - (EEPROM_PAGE_SIZE - (address & 0x0F))) / EEPROM_PAGE_SIZE;  /* Full page count */
+        page_num += (write_size - (EEPROM_PAGE_SIZE - (address & 0x0F))) / EEPROM_PAGE_SIZE; /* Full page count */
     }
 
     if ((write_size - (EEPROM_PAGE_SIZE - (address & 0x0F))) > 0)
     {
-        page_num += ((write_size - (address & 0x0F)) % EEPROM_PAGE_SIZE == 0) ? 0 : 1;  /* Remaining page count */
+        page_num += ((write_size - (address & 0x0F)) % EEPROM_PAGE_SIZE == 0) ? 0 : 1; /* Remaining page count */
     }
 
     EEPROM_SET_WP(0);
