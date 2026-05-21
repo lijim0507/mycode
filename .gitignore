@@ -9,3 +9,4 @@ AGENTS.md
 release/
 dependencies.lock
 .cache/
+.DS_Store
