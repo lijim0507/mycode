@@ -8,10 +8,21 @@ set(ws2812_core_srcs
     "ws2812/core/ws2812_effect.c"
 )
 
-# Platform-specific port: only compile the port for this target
 set(ws2812_port_srcs "ws2812/port/esp32_rmt.c")
 
-list(APPEND srcs ${ws2812_core_srcs} ${ws2812_port_srcs})
+set(swi2c_core_srcs
+    "swi2c/core/swi2c.c"
+)
+
+set(swi2c_port_srcs "swi2c/port/esp32_bitbang.c")
+
+set(eeprom_core_srcs
+    "eeprom/core/eeprom.c"
+)
+
+list(APPEND srcs ${ws2812_core_srcs} ${ws2812_port_srcs}
+                 ${swi2c_core_srcs} ${swi2c_port_srcs}
+                 ${eeprom_core_srcs})
 
 idf_component_register( SRCS "${srcs}"
 
@@ -19,6 +30,9 @@ idf_component_register( SRCS "${srcs}"
                                         "./can_simple"
                                         "./ws2812/include"
                                         "./ws2812/port"
+                                        "./swi2c/include"
+                                        "./swi2c/port"
+                                        "./eeprom/include"
 
                         PRIV_REQUIRES   spi_flash
                                         esp_driver_twai 
