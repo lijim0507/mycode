@@ -225,14 +225,7 @@ const i2c_transport_t *swi2c_get_transport(void)
 static void swi2c_send_bit(uint8_t bit)
 {
     g_driver->scl_set(0);
-    if (bit > 0)
-    {
-        g_driver->sda_set(1);
-    }
-    else
-    {
-        g_driver->sda_set(0);
-    }
+    g_driver->sda_set(bit ? 1 : 0);
     g_driver->delay_us();
     g_driver->scl_set(1);
     g_driver->delay_us();

@@ -14,15 +14,23 @@ set(swi2c_core_srcs
     "swi2c/core/swi2c.c"
 )
 
-set(swi2c_port_srcs "swi2c/port/esp32_bitbang.c")
+set(swi2c_port_srcs "swi2c/port/swi2c_port.c")
 
 set(eeprom_core_srcs
     "eeprom/core/eeprom.c"
 )
 
+set(key_core_srcs
+    "key/core/key.c"
+    "key/core/key_filter.c"
+    "key/core/key_state.c"
+    "key/core/key_event.c"
+)
+
 list(APPEND srcs ${ws2812_core_srcs} ${ws2812_port_srcs}
                  ${swi2c_core_srcs} ${swi2c_port_srcs}
-                 ${eeprom_core_srcs})
+                 ${eeprom_core_srcs}
+                 ${key_core_srcs})
 
 idf_component_register( SRCS "${srcs}"
 
@@ -33,6 +41,7 @@ idf_component_register( SRCS "${srcs}"
                                         "./swi2c/include"
                                         "./swi2c/port"
                                         "./eeprom/include"
+                                        "./key/include"
 
                         PRIV_REQUIRES   spi_flash
                                         esp_driver_twai 

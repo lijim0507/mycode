@@ -21,16 +21,34 @@ extern "C" {
 typedef struct i2c_transport i2c_transport_t;
 
 /**
- * @brief  EEPROM 设备配置
- * @note   支持 24Cxx 系列及兼容 EEPROM（I2C 接口）
+ * @brief  EEPROM 接口类型
+ */
+typedef enum {
+    EEPROM_TYPE_I2C = 0,
+    EEPROM_TYPE_SPI,
+} eeprom_type_t;
+
+/**
+ * @brief  SPI EEPROM 传输接口
+ * @note   上层只需提供 CS 引脚控制 + SPI 全双工传输两个原语
  */
 typedef struct {
-    uint8_t  device_addr;
-    uint16_t page_size;
-    uint32_t memory_size;
-    uint8_t  addr_bytes;
-    void     (*wp_set)(uint8_t level);
-    void     (*delay_ms)(uint32_t ms);
+    void    (*cs_set)(uint8_t level);
+    uint8_t (*transfer)(uint8_t data);
+} spi_eeprom_transport_t;
+
+/**
+ * @brief  EEPROM 设备配置（I2C / SPI 统一）
+ * @note   支持 24Cxx 系列（I2C）及 25LCxx 系列（SPI）
+ */
+typedef struct {
+    eeprom_type_t type;
+    uint8_t       device_addr;
+    uint16_t      page_size;
+    uint32_t      memory_size;
+    uint8_t       addr_bytes;
+    void         (*wp_set)(uint8_t level);
+    void         (*delay_ms)(uint32_t ms);
 } eeprom_config_t;
 
 /****************************************************************************/
@@ -43,11 +61,13 @@ typedef struct {
 
 /**
  * @brief  初始化 EEPROM 模块
- * @param  config    EEPROM 设备配置指针
- * @param  transport I2C 传输接口指针（由 swi2c_get_transport() 获取）
+ * @param  config    EEPROM 设备配置（根据 type 字段自动选择传输类型）
+ * @param  transport 传输接口指针：
+ *                   - EEPROM_TYPE_I2C: (const i2c_transport_t *)
+ *                   - EEPROM_TYPE_SPI: (const spi_eeprom_transport_t *)
  * @return 0: 成功, -1: 参数错误, -2: transport 无效
  */
-int  eeprom_init(eeprom_config_t *config, const i2c_transport_t *transport);
+int  eeprom_init(eeprom_config_t *config, const void *transport);
 
 /**
  * @brief  反初始化 EEPROM 模块
@@ -63,17 +83,19 @@ int  eeprom_deinit(void);
  * @return 0: 成功, -1: 参数错误, -2: 未初始化, -3: 从机 NACK
  * @note   自动处理页边界，支持跨页读取
  */
-int  eeprom_read_bytes(uint16_t address, uint8_t *data, uint16_t size);
+int  eeprom_read_bytes(uint32_t address, uint8_t *data, uint16_t size);
 
 /**
  * @brief  向 EEPROM 写入数据（页写入）
  * @param  address  起始地址
  * @param  data     写入数据缓冲区
  * @param  size     写入字节数
- * @return 0: 成功, -1: 参数错误, -2: 未初始化, -3: 从机 NACK
- * @note   自动处理页边界，每页写入后等待 EEPROM 写周期（5ms）
+ * @return 0: 成功, -1: 参数错误, -2: 未初始化, -3: 从机 NACK / SPI 写入超时
+ * @note   自动处理页边界
+ *         I2C: 每页写入后等待固定写周期（delay_ms(5)）
+ *         SPI: 轮询状态寄存器 WIP 位直到写入完成（超时 10ms）
  */
-int  eeprom_write_bytes(uint16_t address, const uint8_t *data, uint16_t size);
+int  eeprom_write_bytes(uint32_t address, const uint8_t *data, uint16_t size);
 
 #ifdef __cplusplus
 }
