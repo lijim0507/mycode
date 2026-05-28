@@ -1,9 +1,15 @@
 
-#ifndef APP_BLE_H
-#define APP_BLE_H
+
+#ifndef __UDS_H_
+#define __UDS_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /****************************************************************************/
 /*								Macros										*/
@@ -13,20 +19,32 @@
 /*								Typedefs									*/
 /****************************************************************************/
 
+typedef struct uds_can_driver {
+    int      (*init)(void *config);
+    int      (*send)(uint32_t id, const uint8_t *data, uint8_t len);
+    int      (*deinit)(void);
+    uint32_t (*get_ms)(void);
+    void     (*debug)(const char *message, ...);
+} uds_can_driver_t;
+
 /****************************************************************************/
-/*							Exproted Variables								*/
+/*						Exproted Variables								*/
 /****************************************************************************/
 
 /****************************************************************************/
-/*							Exproted Functions								*/
+/*						Exproted Functions								*/
 /****************************************************************************/
-void app_ble_init(void);
-void app_ble_task(void *param);
+
+int  uds_init(const uds_can_driver_t *driver, void *port_cfg);
+int  uds_deinit(void);
+void uds_poll(void);
+void uds_on_can_frame(uint32_t id, const uint8_t *data, uint8_t len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 /****************************************************************************/
 /*								EOF											*/
 /****************************************************************************/
-
-
-

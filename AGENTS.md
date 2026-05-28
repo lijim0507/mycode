@@ -14,6 +14,7 @@ main/
 ├── foc/                    # FOC 数学库 (Clarke/Park 坐标变换)
 ├── imu/                    # IMU 惯性测量 (ICM-42688-P, SPI)
 ├── key/                    # 按键检测 (单击/双击/长按, 多平台移植)
+├── log-lib/                # 日志库 (多平台移植)
 ├── mqtt/                   # MQTT 客户端 (SIM800 蜂窝 / WiFi)
 ├── swi2c/                  # 软件 I2C (GPIO 模拟)
 ├── swi2c and eeprom driver/ # [旧版] SWI2C + EEPROM 一体化驱动
@@ -25,6 +26,42 @@ main/
 ├── main.c                  # 主入口 (FreeRTOS)
 └── CMakeLists.txt          # 顶层构建配置
 ```
+
+每个模块内部遵循 `include/` — `core/` — `port/` 的三层结构（详见下方 "代码架构风格" 章节）。
+
+## 代码架构风格
+
+本项目的模块采用**分层架构**，每个模块目录内按职责拆分为以下层级：
+
+```
+module_name/
+├── include/           # 公共头文件（对外 API 声明）
+├── core/              # 核心逻辑层（硬件无关，可跨平台复用）
+└── port/              # 平台移植层（硬件相关实现，每个平台一个文件）
+```
+
+### 分层职责
+
+| 层级 | 目录 | 职责 |
+|------|------|------|
+| API 层 | `include/` | 模块类型定义、对外函数声明、公共宏 |
+| Core 层 | `core/` | 核心算法、数据处理、状态管理，不依赖具体硬件 |
+| Port 层 | `port/` | 硬件抽象接口定义 + 各平台的具体实现 |
+
+### 硬件抽象接口模式
+
+1. 在 `port/xxx_port.h` 中定义函数指针结构体作为硬件抽象接口
+2. 每个 `port/xxx_platform.c` 实现该接口的所有函数
+3. 提供一个 `xxx_port_get_driver()` 函数，返回填充好的驱动实例指针
+4. Core 层通过 `xxx_init(driver, config, ...)` 注入驱动实例
+5. 模块状态使用 `g_` 前缀的静态全局变量在 core 层统一管理
+
+### 模块内文件拆分
+
+当模块功能较多时，按职责拆分 core 层文件：
+- `xxx.c` — 核心初始化、数据管理与数据流控制
+- `xxx_effect.c` / `xxx_algo.c` — 算法/效果逻辑
+- `xxx_color.c` / `xxx_util.c` — 工具/辅助函数
 
 ## 编码规范
 

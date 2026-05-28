@@ -1,13 +1,15 @@
 
-#ifndef __FOC_H_
-#define __FOC_H_
+
+#ifndef __UDS_PORT_H_
+#define __UDS_PORT_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
+#include "uds.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /****************************************************************************/
 /*								Macros										*/
@@ -18,17 +20,18 @@
 /****************************************************************************/
 
 /****************************************************************************/
-/*							Exproted Variables								*/
+/*						Exproted Variables								*/
 /****************************************************************************/
 
 /****************************************************************************/
-/*							Exproted Functions								*/
+/*						Exproted Functions								*/
 /****************************************************************************/
-float foc_electrical_angle(float shaft_angle);
-void foc_clarke_transform(float a, float b, float c, float *alpha, float *beta);
-void foc_inv_clarke_transform(float alpha, float beta, float *a, float *b, float *c);
-void foc_park_transform(float alpha, float beta, float theta, float *d, float *q);
-void foc_inv_park_transform(float d, float q, float theta, float *alpha, float *beta);
+
+const uds_can_driver_t *uds_port_get_driver(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 /****************************************************************************/

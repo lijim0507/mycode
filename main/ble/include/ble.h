@@ -1,49 +1,60 @@
-#ifndef GAP_SVC_H
-#define GAP_SVC_H
+
+
+#ifndef __BLE_H_
+#define __BLE_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-/* Includes */
-/* NimBLE GAP APIs */
-#include "host/ble_gap.h"
-#include "services/gap/ble_svc_gap.h"
+#include <stdint.h>
+#include <stdbool.h>
 
-/* NimBLE stack APIs */
-#include "host/ble_hs.h"
-#include "host/ble_uuid.h"
-#include "host/util/util.h"
-#include "nimble/ble.h"
-#include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
-#include "nvs_flash.h"
-#include "sdkconfig.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
-/* Defines */
-#define BLE_GAP_APPEARANCE_GENERIC_TAG 0x0200
-#define BLE_GAP_URI_PREFIX_HTTPS 0x17
-#define BLE_GAP_LE_ROLE_PERIPHERAL 0x00
+#define BLE_GAP_APPEARANCE_GENERIC_TAG   0x0200
+#define BLE_GAP_URI_PREFIX_HTTPS         0x17
+#define BLE_GAP_LE_ROLE_PERIPHERAL       0x00
+
+#define DEVICE_NAME "MY_BLE_DEVICE"
 
 /****************************************************************************/
 /*								Typedefs									*/
 /****************************************************************************/
 
+typedef struct ble_driver {
+    int  (*init)(void *config);
+    int  (*deinit)(void);
+    void (*run)(void);
+    int  (*adv_start)(void *adv_cfg);
+    int  (*svc_init)(void *svc_table, void *access_cb, void *register_cb,
+                     void *subscribe_cb);
+    int  (*notify)(uint16_t conn_handle, uint16_t attr_handle,
+                   const uint8_t *data, uint16_t len);
+} ble_driver_t;
+
 /****************************************************************************/
-/*							Exproted Variables								*/
+/*						Exproted Variables								*/
 /****************************************************************************/
 
-void gap_adv_init(void);
-int gap_init(void);
+/****************************************************************************/
+/*						Exproted Functions								*/
+/****************************************************************************/
 
-/****************************************************************************/
-/*							Exproted Functions								*/
-/****************************************************************************/
+int  ble_init(const ble_driver_t *driver, void *port_cfg);
+int  ble_deinit(void);
+void ble_task(void *param);
+int  ble_notify(uint8_t svc_id, const uint8_t *data, uint16_t len);
+int  ble_send(uint8_t channel, const uint8_t *data, uint16_t len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 /****************************************************************************/
 /*								EOF											*/
 /****************************************************************************/
-
-
