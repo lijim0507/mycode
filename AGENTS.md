@@ -20,6 +20,7 @@ main/
 ├── swi2c/                  # 软件 I2C (GPIO 模拟)
 ├── swi2c and eeprom driver/ # [旧版] SWI2C + EEPROM 一体化驱动
 ├── udisk/                  # USB Host 优盘存储 (FatFS 数据记录)
+├── uart/                     # 通用帧解析器 (复制改格式检测即可适配新协议)
 ├── uds/                    # UDS 汽车诊断协议 (ISO 15765-2 ISOTP over CAN)
 ├── utility/                # 通用工具函数 (数值钳位、类型转换)
 ├── ws2812/                 # WS2812 可寻址 RGB LED 灯带
