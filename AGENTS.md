@@ -8,6 +8,7 @@
 
 ```
 main/
+├── at/                     # AT 指令 (SIM800/4G 蜂窝模组 UART)
 ├── ble/                    # BLE 蓝牙 (NimBLE GATT 外设)
 ├── can_simple/             # CAN 总线 (ODrive/SimpleFOC 电机控制协议)
 ├── eeprom/                 # EEPROM (I2C 24Cxx & SPI 25LCxx 抽象驱动)
@@ -109,6 +110,22 @@ module_name/
 | 枚举值 | `UPPER_CASE` + 模块前缀 | `NETWORK_TYPE_SIM`, `ISOTP_SEND_STATUS_IDLE` |
 | 函数名 | `snake_case` + 模块前缀 | `eeprom_read_bytes()`, `ws2812_set_pixel()` |
 | 宏常量 | `UPPER_CASE` | `MOTOR_LEFT_NODE_ID` |
+
+### 括号风格
+- **所有 `{}` 必须独占一行（Allman 风格）**，不得与 `if`/`for`/`while`/`struct` 等语句同行
+- 正确示例：
+  ```c
+  if (condition)
+  {
+      do_something();
+  }
+  ```
+- 错误示例：
+  ```c
+  if (condition) {
+      do_something();
+  }
+  ```
 
 ### 类型定义
 - 所有 struct/enum 必须 typedef 为 `_t` 后缀类型
