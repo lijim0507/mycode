@@ -2,18 +2,13 @@
 /*								Includes									*/
 /****************************************************************************/
 #include "imu.h"
-#include "imu_port.h"
 #include "icm42688.h"
 
-#include "esp_log.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/****************************************************************************/
-/*								Macros										*/
-/****************************************************************************/
-#define TAG "IMU"
 /****************************************************************************/
 /*								Typedefs									*/
 /****************************************************************************/
@@ -38,7 +33,7 @@ static imu_data_t          g_data;
 
 int imu_init(const imu_driver_t *driver, void *port_cfg)
 {
-    if (!driver || !driver->spi_send || !driver->spi_recv || !driver->set_cs) {
+    if (!driver || !driver->spi_send || !driver->spi_recv || !driver->set_cs || !driver->delay_ms) {
         return -1;
     }
 
@@ -47,7 +42,6 @@ int imu_init(const imu_driver_t *driver, void *port_cfg)
     }
 
     if (driver->init && driver->init(port_cfg) != 0) {
-        ESP_LOGE(TAG, "driver init failed");
         return -2;
     }
 
@@ -55,7 +49,10 @@ int imu_init(const imu_driver_t *driver, void *port_cfg)
 
     g_handle = icm42688_init();
     if (g_handle == NULL) {
-        ESP_LOGE(TAG, "icm42688 init failed");
+        if (g_driver->deinit) {
+            g_driver->deinit();
+        }
+        g_driver = NULL;
         return -3;
     }
 
@@ -84,7 +81,12 @@ int imu_init(const imu_driver_t *driver, void *port_cfg)
     icm42688_set_config(g_handle, config);
 
     if (icm42688_config(g_handle) != ERR_CODE_SUCCESS) {
-        ESP_LOGE(TAG, "icm42688 config failed");
+        free(g_handle);
+        g_handle = NULL;
+        if (g_driver->deinit) {
+            g_driver->deinit();
+        }
+        g_driver = NULL;
         return -4;
     }
 
@@ -102,6 +104,7 @@ int imu_deinit(void)
         g_driver->deinit();
     }
 
+    free(g_handle);
     g_handle      = NULL;
     g_driver      = NULL;
     g_initialized = false;

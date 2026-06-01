@@ -1,44 +1,35 @@
+#ifndef __BOARD_H_
+#define __BOARD_H_
 
-
-#ifndef __IMU_PORT_H_
-#define __IMU_PORT_H_
 /****************************************************************************/
-/*								Includes									*/
+/*                              Includes                                    */
 /****************************************************************************/
-#include "imu.h"
+#include "imu_port.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /****************************************************************************/
-/*								Macros										*/
+/*                              Typedefs                                    */
 /****************************************************************************/
+typedef enum {
+    BOARD_OK = 0,
+    BOARD_ERR_IMU = -1,
+} board_err_t;
 
 /****************************************************************************/
-/*								Typedefs									*/
+/*                      Exproted Variables                                  */
 /****************************************************************************/
-typedef struct {
-    int      spi_host;
-    int      miso_pin;
-    int      mosi_pin;
-    int      sclk_pin;
-    int      cs_pin;
-    uint32_t clock_hz;
-    uint8_t  spi_mode;
-    uint8_t  queue_size;
-    uint32_t max_transfer_size;
-} imu_port_config_t;
+extern const imu_port_config_t g_board_imu_cfg;
 
 /****************************************************************************/
-/*						Exproted Variables								*/
+/*                      Exproted Functions                                  */
 /****************************************************************************/
-
-/****************************************************************************/
-/*						Exproted Functions								*/
-/****************************************************************************/
-
-const imu_driver_t *imu_port_get_driver(void);
+int board_init(void);
+int board_deinit(void);
+int board_imu_init(void);
+int board_imu_deinit(void);
 
 #ifdef __cplusplus
 }
@@ -46,5 +37,5 @@ const imu_driver_t *imu_port_get_driver(void);
 
 #endif
 /****************************************************************************/
-/*								EOF											*/
+/*                              EOF                                         */
 /****************************************************************************/

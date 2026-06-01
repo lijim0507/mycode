@@ -1,6 +1,6 @@
 
-#ifndef __UART_FRAME_H_
-#define __UART_FRAME_H_
+#ifndef __UART_H_
+#define __UART_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
@@ -31,7 +31,6 @@ typedef struct
     uart_frame_state_t state;
     uint8_t            buf[UART_FRAME_BUF_SIZE];
     uint16_t           buf_len;
-    uint32_t           timeout_ms;
     uint32_t           last_tick;
 } uart_frame_parser_t;
 
@@ -43,12 +42,9 @@ typedef struct
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-void     uart_frame_init(uart_frame_parser_t *p, uint32_t timeout_ms);
-int      uart_frame_feed(uart_frame_parser_t *p, const uint8_t *data,
-                         uint8_t len, uint32_t tick);
-int      uart_frame_check_timeout(uart_frame_parser_t *p, uint32_t tick);
-int      uart_frame_is_complete(uart_frame_parser_t *p);
-void     uart_frame_reset(uart_frame_parser_t *p);
+int xxx_check_recv_complete(const uint8_t *p_buffer, uint16_t len, uint32_t time)
+int xxx_check_recv_timeout(uint32_t time)
+
 
 #ifdef __cplusplus
 }

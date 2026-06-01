@@ -167,54 +167,80 @@ typedef struct icm42688 {
 
 static err_code_t icm42688_send(icm42688_handle_t handle, uint8_t reg_addr, uint8_t *buf_send, uint16_t len)
 {
+	err_code_t ret = ERR_CODE_SUCCESS;
+
 	if (handle->comm_mode == ICM42688_COMM_MODE_I2C)
 	{
-		handle->i2c_send(reg_addr, buf_send, len);
+		ret = handle->i2c_send(reg_addr, buf_send, len);
 	}
 	else
 	{
 		if (handle->set_cs != NULL)
 		{
-			handle->set_cs(ICM42688_CS_ACTIVE);
+			ret = handle->set_cs(ICM42688_CS_ACTIVE);
+			if (ret != ERR_CODE_SUCCESS)
+			{
+				return ret;
+			}
 		}
 
-		handle->spi_send(&reg_addr, 1);
-		handle->spi_send(buf_send, len);
+		ret = handle->spi_send(&reg_addr, 1);
+		if (ret == ERR_CODE_SUCCESS)
+		{
+			ret = handle->spi_send(buf_send, len);
+		}
 
 		if (handle->set_cs != NULL)
 		{
-			handle->set_cs(ICM42688_CS_UNACTIVE);
+			err_code_t cs_ret = handle->set_cs(ICM42688_CS_UNACTIVE);
+			if (ret == ERR_CODE_SUCCESS)
+			{
+				ret = cs_ret;
+			}
 		}
 	}
 
-	return ERR_CODE_SUCCESS;
+	return ret;
 }
 
 static err_code_t icm42688_recv(icm42688_handle_t handle, uint8_t reg_addr, uint8_t *buf_recv, uint16_t len)
 {
+	err_code_t ret = ERR_CODE_SUCCESS;
+
 	if (handle->comm_mode == ICM42688_COMM_MODE_I2C)
 	{
-		handle->i2c_send(reg_addr, buf_recv, len);
+		ret = handle->i2c_recv(reg_addr, buf_recv, len);
 	}
 	else
 	{
 		if (handle->set_cs != NULL)
 		{
-			handle->set_cs(ICM42688_CS_ACTIVE);
+			ret = handle->set_cs(ICM42688_CS_ACTIVE);
+			if (ret != ERR_CODE_SUCCESS)
+			{
+				return ret;
+			}
 		}
 
 		uint8_t buf = reg_addr | 0x80;
 
-		handle->spi_send(&buf, 1);
-		handle->spi_recv(buf_recv, len);
+		ret = handle->spi_send(&buf, 1);
+		if (ret == ERR_CODE_SUCCESS)
+		{
+			ret = handle->spi_recv(buf_recv, len);
+		}
 
 		if (handle->set_cs != NULL)
 		{
-			handle->set_cs(ICM42688_CS_UNACTIVE);
+			err_code_t cs_ret = handle->set_cs(ICM42688_CS_UNACTIVE);
+			if (ret == ERR_CODE_SUCCESS)
+			{
+				ret = cs_ret;
+			}
 		}
 	}
 
-	return ERR_CODE_SUCCESS;
+	return ret;
 }
 
 static err_code_t icm42688_set_bank(icm42688_handle_t handle, uint8_t bank)
