@@ -47,13 +47,15 @@ typedef void (*at_async_callback_t)(at_resp_status_t status,
 /* URC 行回调 (收到主动上报时调用) */
 typedef void (*at_urc_handler_t)(const char *line, void *user_data);
 
+/* 接收数据回调：port 层收到 UART 数据后调用此回调上抛给 core 层，运行在 port 的 RX task 上下文 */
+typedef void (*at_uart_recv_cb_t)(const uint8_t *data, uint32_t len, void *user_ctx);
+
 /* UART 抽象驱动，用于解耦 AT 核心与具体硬件 */
 typedef struct
 {
-    int (*init)(void *config);                                             /* 初始化 UART       */
-    int (*send)(const uint8_t *data, uint32_t len);                        /* 发送数据           */
-    int (*recv)(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms);     /* 接收数据(带超时)   */
-    int (*deinit)(void);                                                   /* 反初始化 UART      */
+    int (*init)(void *config, at_uart_recv_cb_t recv_cb, void *user_ctx);  /* 初始化 UART + 注册接收回调  */
+    int (*send)(const uint8_t *data, uint32_t len);                        /* 发送数据                     */
+    int (*deinit)(void);                                                   /* 反初始化 UART                */
 } at_uart_driver_t;
 
 /****************************************************************************/
@@ -86,6 +88,9 @@ int at_send_async(const char *cmd, at_async_callback_t cb, void *user_data,
 int at_send_data_async(const char *cmd, const uint8_t *data, uint32_t data_len,
                        at_async_callback_t cb, void *user_data, uint32_t timeout_ms);
 int at_recv_poll(void);     /* 在 Task 循环中周期性调用，驱动接收和解析       */
+
+/* ---- 流缓冲接口 (core/at.c) ---- */
+int at_stream_recv(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms);
 
 /* ---- 底层帧接口 (core/at_frame.c) ---- */
 int at_frame_send(const uint8_t *content, uint32_t content_len);

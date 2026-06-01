@@ -9,11 +9,12 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/stream_buffer.h"
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
 #define AT_INTER_FRAME_MS    200                                /* 帧间超时(ms)                */
-#define AT_RECV_STEP_MS      50                                 /* 非阻塞轮询步长              */
+#define AT_STREAM_BUF_SIZE   2048                               /* 接收流缓冲大小               */
 /****************************************************************************/
 /*                              Typedefs                                    */
 /****************************************************************************/
@@ -30,20 +31,22 @@ typedef struct
 /****************************************************************************/
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
+static void at_uart_data_cb(const uint8_t *data, uint32_t len, void *user_ctx);
 
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
 const at_uart_driver_t *g_at_driver;
-static bool              g_initialized;
-static at_active_t       g_active;
+static bool                 g_initialized;
+static at_active_t          g_active;
+static StreamBufferHandle_t g_at_stream;
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
 
 int at_init(const at_uart_driver_t *driver, void *port_cfg)
 {
-    if (!driver || !driver->init || !driver->send || !driver->recv)
+    if (!driver || !driver->init || !driver->send)
     {
         return -1;
     }
@@ -53,8 +56,16 @@ int at_init(const at_uart_driver_t *driver, void *port_cfg)
         at_deinit();
     }
 
-    if (driver->init(port_cfg) != 0)
+    g_at_stream = xStreamBufferCreate(AT_STREAM_BUF_SIZE, 1);
+    if (g_at_stream == NULL)
     {
+        return -3;
+    }
+
+    if (driver->init(port_cfg, at_uart_data_cb, NULL) != 0)
+    {
+        vStreamBufferDelete(g_at_stream);
+        g_at_stream = NULL;
         return -2;
     }
 
@@ -75,6 +86,12 @@ int at_deinit(void)
     if (g_at_driver && g_at_driver->deinit)
     {
         g_at_driver->deinit();
+    }
+
+    if (g_at_stream)
+    {
+        vStreamBufferDelete(g_at_stream);
+        g_at_stream = NULL;
     }
 
     g_at_driver   = NULL;
@@ -282,8 +299,8 @@ int at_recv_poll(void)
         }
     }
 
-    /* 非阻塞读取 UART → 阶段一：积累 */
-    len = g_at_driver->recv(recv_buf, sizeof(recv_buf), 0);
+    /* 非阻塞读取流缓冲 → 阶段一：积累 */
+    len = at_stream_recv(recv_buf, sizeof(recv_buf), 0);
     if (len > 0)
     {
         int complete = at_parser_feed((const char *)recv_buf, (uint32_t)len);
@@ -337,9 +354,38 @@ int at_recv_poll(void)
     return 0;
 }
 
+/*
+ * 从接收流缓冲中取数据，供 at_frame_recv 和 at_recv_poll 使用。
+ * timeout_ms=0 时非阻塞；>0 时阻塞等待至超时。
+ * 返回值: >=0 读到的字节数, -1 参数无效
+ */
+int at_stream_recv(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms)
+{
+    if (!g_at_stream || !buf || buf_size == 0)
+    {
+        return -1;
+    }
+    return (int)xStreamBufferReceive(g_at_stream, buf, buf_size,
+                                     pdMS_TO_TICKS(timeout_ms));
+}
+
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
+
+/*
+ * Port 层接收回调：由 port 的 RX task 调用，将接收到的原始数据写入流缓冲。
+ * 此回调在 port 层 task 上下文执行，仅做轻量数据搬运，不涉及解析。
+ */
+static void at_uart_data_cb(const uint8_t *data, uint32_t len, void *user_ctx)
+{
+    (void)user_ctx;
+
+    if (g_at_stream)
+    {
+        xStreamBufferSend(g_at_stream, data, len, 0);
+    }
+}
 
 /****************************************************************************/
 /*								EOF											*/

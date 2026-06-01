@@ -98,7 +98,7 @@ int at_frame_recv(at_resp_t *resp, uint32_t timeout_ms)
 
     while (pdTICKS_TO_MS(xTaskGetTickCount()) - start_tick < timeout_ms)
     {
-        len = g_at_driver->recv(recv_buf, sizeof(recv_buf), AT_RECV_STEP_MS);
+        len = at_stream_recv(recv_buf, sizeof(recv_buf), AT_RECV_STEP_MS);
         if (len > 0)
         {
             /* 阶段一：积累数据，检查帧格式完整性 */

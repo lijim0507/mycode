@@ -3,12 +3,13 @@
 /****************************************************************************/
 #include "at_port.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include "freertos/task.h"
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
@@ -17,6 +18,10 @@
 #define AT_ESP32_UART_TX_PIN     17             /* 默认 TX 引脚                */
 #define AT_ESP32_UART_RX_PIN     16             /* 默认 RX 引脚                */
 #define AT_ESP32_UART_BUF_SIZE   1024           /* UART 内部环形缓冲区大小      */
+#define AT_ESP32_RX_TASK_STACK   2048           /* 接收任务栈深度 (字)          */
+#define AT_ESP32_RX_TASK_PRIO    5              /* 接收任务优先级                */
+#define AT_ESP32_RX_POLL_MS      20             /* 接收轮询间隔 (ms)            */
+#define AT_ESP32_RX_CHUNK_SIZE   256            /* 单次读取最大字节数            */
 /****************************************************************************/
 /*                              Typedefs                                    */
 /****************************************************************************/
@@ -32,18 +37,20 @@ typedef struct
 /* ESP32 AT 端口内部上下文 */
 typedef struct
 {
-    bool             initialized;  /* 初始化完成标志                           */
-    SemaphoreHandle_t recv_sem;    /* 接收信号量（预留 ISR 通知）              */
+    bool              initialized;   /* 初始化完成标志                          */
+    TaskHandle_t      rx_task;       /* 接收任务句柄                            */
+    at_uart_recv_cb_t recv_cb;       /* 接收数据回调，由 core 层注入             */
+    void             *recv_user_ctx; /* 接收回调用户上下文                       */
 } at_esp32_ctx_t;
 
 /****************************************************************************/
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
 
-static int  esp32_at_init(void *config);
+static int  esp32_at_init(void *config, at_uart_recv_cb_t recv_cb, void *user_ctx);
 static int  esp32_at_send(const uint8_t *data, uint32_t len);
-static int  esp32_at_recv(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms);
 static int  esp32_at_deinit(void);
+static void esp32_at_rx_task(void *arg);
 
 /****************************************************************************/
 /*							Global Variables								*/
@@ -57,9 +64,9 @@ static at_esp32_ctx_t g_at_ctx;     /* 端口全局上下文                    
 /*
  * 初始化 ESP32 UART。
  * config 可传入 at_esp32_cfg_t 覆盖默认引脚和波特率，传 NULL 使用默认值。
- * 返回值: 0=成功, -1=驱动安装失败, -2=参数配置失败, -3=引脚设置失败, -4=信号量创建失败
+ * 返回值: 0=成功, -1=驱动安装失败, -2=参数配置失败, -3=引脚设置失败, -4=接收任务创建失败
  */
-static int esp32_at_init(void *config)
+static int esp32_at_init(void *config, at_uart_recv_cb_t recv_cb, void *user_ctx)
 {
     uint8_t  tx_pin   = AT_ESP32_UART_TX_PIN;
     uint8_t  rx_pin   = AT_ESP32_UART_RX_PIN;
@@ -106,15 +113,22 @@ static int esp32_at_init(void *config)
         return -3;
     }
 
-    /* 创建接收信号量（供日后 ISR 回调使用） */
-    g_at_ctx.recv_sem = xSemaphoreCreateBinary();
-    if (g_at_ctx.recv_sem == NULL)
+    /* 保存回调，创建接收任务 */
+    g_at_ctx.recv_cb       = recv_cb;
+    g_at_ctx.recv_user_ctx = user_ctx;
+    g_at_ctx.initialized   = true;
+
+    if (xTaskCreate(esp32_at_rx_task, "at_rx",
+                    AT_ESP32_RX_TASK_STACK, NULL,
+                    AT_ESP32_RX_TASK_PRIO, &g_at_ctx.rx_task) != pdPASS)
     {
+        g_at_ctx.initialized = false;
+        g_at_ctx.recv_cb = NULL;
+        g_at_ctx.recv_user_ctx = NULL;
         uart_driver_delete(AT_ESP32_UART_PORT);
         return -4;
     }
 
-    g_at_ctx.initialized = true;
     return 0;
 }
 
@@ -134,25 +148,32 @@ static int esp32_at_send(const uint8_t *data, uint32_t len)
 }
 
 /*
- * 从 UART 接收数据，带超时控制。
- * 返回值: >=0=接收到的字节数, -1=未初始化或参数无效, -2=接收错误
+ * 接收任务：循环读取 UART 数据并通过回调上抛给 core 层。
  */
-static int esp32_at_recv(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms)
+static void esp32_at_rx_task(void *arg)
 {
-    if (!g_at_ctx.initialized || !buf || buf_size == 0)
+    uint8_t buf[AT_ESP32_RX_CHUNK_SIZE];
+    int     len;
+
+    (void)arg;
+
+    while (g_at_ctx.initialized)
     {
-        return -1;
+        len = uart_read_bytes(AT_ESP32_UART_PORT, buf, sizeof(buf),
+                              pdMS_TO_TICKS(AT_ESP32_RX_POLL_MS));
+        if (len > 0 && g_at_ctx.recv_cb)
+        {
+            g_at_ctx.recv_cb(buf, (uint32_t)len, g_at_ctx.recv_user_ctx);
+        }
     }
 
-    TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
-
-    int len = uart_read_bytes(AT_ESP32_UART_PORT, buf, buf_size, ticks);
-    return (len < 0) ? -2 : (int)len;
+    g_at_ctx.rx_task = NULL;
+    vTaskDelete(NULL);
 }
 
 /*
  * 反初始化 ESP32 UART。
- * 安全释放信号量和 UART 驱动资源，可重复调用。
+ * 停止接收任务并释放 UART 驱动资源，可重复调用。
  * 返回值: 0=成功
  */
 static int esp32_at_deinit(void)
@@ -162,14 +183,17 @@ static int esp32_at_deinit(void)
         return 0;
     }
 
-    if (g_at_ctx.recv_sem != NULL)
+    g_at_ctx.initialized = false;
+
+    if (g_at_ctx.rx_task)
     {
-        vSemaphoreDelete(g_at_ctx.recv_sem);
-        g_at_ctx.recv_sem = NULL;
+        vTaskDelay(pdMS_TO_TICKS(AT_ESP32_RX_POLL_MS + 10));
     }
 
+    g_at_ctx.recv_cb = NULL;
+    g_at_ctx.recv_user_ctx = NULL;
+
     uart_driver_delete(AT_ESP32_UART_PORT);
-    g_at_ctx.initialized = false;
     return 0;
 }
 
@@ -186,7 +210,6 @@ const at_uart_driver_t *at_port_get_driver(void)
     static const at_uart_driver_t driver = {
         .init   = esp32_at_init,
         .send   = esp32_at_send,
-        .recv   = esp32_at_recv,
         .deinit = esp32_at_deinit,
     };
     return &driver;
