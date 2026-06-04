@@ -38,7 +38,6 @@ typedef struct
 typedef struct
 {
     bool              initialized;   /* 初始化完成标志                          */
-    TaskHandle_t      rx_task;       /* 接收任务句柄                            */
     at_uart_recv_cb_t recv_cb;       /* 接收数据回调，由 core 层注入             */
     void             *recv_user_ctx; /* 接收回调用户上下文                       */
 } at_esp32_ctx_t;
@@ -118,17 +117,6 @@ static int esp32_at_init(void *config, at_uart_recv_cb_t recv_cb, void *user_ctx
     g_at_ctx.recv_user_ctx = user_ctx;
     g_at_ctx.initialized   = true;
 
-    if (xTaskCreate(esp32_at_rx_task, "at_rx",
-                    AT_ESP32_RX_TASK_STACK, NULL,
-                    AT_ESP32_RX_TASK_PRIO, &g_at_ctx.rx_task) != pdPASS)
-    {
-        g_at_ctx.initialized = false;
-        g_at_ctx.recv_cb = NULL;
-        g_at_ctx.recv_user_ctx = NULL;
-        uart_driver_delete(AT_ESP32_UART_PORT);
-        return -4;
-    }
-
     return 0;
 }
 
@@ -148,27 +136,11 @@ static int esp32_at_send(const uint8_t *data, uint32_t len)
 }
 
 /*
- * 接收任务：循环读取 UART 数据并通过回调上抛给 core 层。
+ * 接收任务：放在中断或者接收的位置中断轮询 UART 接收数据，并通过回调上抛给核心层。
  */
-static void esp32_at_rx_task(void *arg)
+void esp32_at_receive(uint8_t *data, uint32_t len)
 {
-    uint8_t buf[AT_ESP32_RX_CHUNK_SIZE];
-    int     len;
-
-    (void)arg;
-
-    while (g_at_ctx.initialized)
-    {
-        len = uart_read_bytes(AT_ESP32_UART_PORT, buf, sizeof(buf),
-                              pdMS_TO_TICKS(AT_ESP32_RX_POLL_MS));
-        if (len > 0 && g_at_ctx.recv_cb)
-        {
-            g_at_ctx.recv_cb(buf, (uint32_t)len, g_at_ctx.recv_user_ctx);
-        }
-    }
-
-    g_at_ctx.rx_task = NULL;
-    vTaskDelete(NULL);
+    g_at_ctx.recv_cb(data, len);
 }
 
 /*
@@ -185,15 +157,10 @@ static int esp32_at_deinit(void)
 
     g_at_ctx.initialized = false;
 
-    if (g_at_ctx.rx_task)
-    {
-        vTaskDelay(pdMS_TO_TICKS(AT_ESP32_RX_POLL_MS + 10));
-    }
 
     g_at_ctx.recv_cb = NULL;
     g_at_ctx.recv_user_ctx = NULL;
 
-    uart_driver_delete(AT_ESP32_UART_PORT);
     return 0;
 }
 
@@ -207,7 +174,8 @@ static int esp32_at_deinit(void)
  */
 const at_uart_driver_t *at_port_get_driver(void)
 {
-    static const at_uart_driver_t driver = {
+    static const at_uart_driver_t driver = 
+    {
         .init   = esp32_at_init,
         .send   = esp32_at_send,
         .deinit = esp32_at_deinit,

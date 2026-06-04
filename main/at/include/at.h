@@ -17,38 +17,44 @@ extern "C" {
 #define AT_RESP_BUF_SIZE    512                              /* 响应缓冲区大小               */
 #define AT_CMD_MAX_LEN      256                              /* AT 指令最大长度              */
 #define AT_URC_MAX_ENTRIES  16                               /* URC 最大注册数              */
+#define AT_RESP_MAX_LINES 16
 
+#define LINE_END_MARKER '\0'
 /****************************************************************************/
 /*                              Typedefs                                    */
 /****************************************************************************/
 
-/* AT 响应状态 */
+/* 帧完成类型 */
 typedef enum
 {
-    AT_RESP_OK = 0,                                          /* 指令执行成功                 */
-    AT_RESP_ERROR,                                           /* 指令执行失败                 */
-    AT_RESP_TIMEOUT,                                         /* 超时无响应                   */
-    AT_RESP_BUSY,                                            /* 模块忙                       */
-} at_resp_status_t;
+    AT_FRAME_INCOMPLETE = 0,                                 /* 帧尚未完整，继续积累          */
+    AT_FRAME_COMPLETE_RESP = 1,                              /* 响应帧完成 (有 OK/ERROR)     */
+    AT_FRAME_COMPLETE_URC = 2,                               /* URC 帧完成 (无结束语, 超时)   */
+} at_frame_type_t;
 
-/* AT 响应结构，存放模块返回的完整响应数据 */
+
+typedef enum
+{
+    AT_RESULT_OK,
+    AT_RESULT_ERROR,
+    AT_RESULT_TIMEOUT,
+} at_result_t;
+
+
 typedef struct
 {
-    at_resp_status_t status;                                /* 响应状态                     */
-    char             data[AT_RESP_BUF_SIZE];                /* 响应原始数据                 */
-    uint32_t         data_len;                              /* 有效数据长度                 */
-} at_resp_t;
+    char *lines[AT_RESP_MAX_LINES]; //回复的响应可能有多行，每行结尾用'\0'分隔
+    uint16_t line_num;
+} at_response_t;
 
 /* 异步命令完成回调 (命令响应结束或超时时调用) */
-typedef void (*at_async_callback_t)(at_resp_status_t status,
+typedef void (*at_async_callback_t)(at_result_t result,
                                     const char *data, uint32_t data_len,
                                     void *user_data);
 
 /* URC 行回调 (收到主动上报时调用) */
 typedef void (*at_urc_handler_t)(const char *line, void *user_data);
 
-/* 接收数据回调：port 层收到 UART 数据后调用此回调上抛给 core 层，运行在 port 的 RX task 上下文 */
-typedef void (*at_uart_recv_cb_t)(const uint8_t *data, uint32_t len, void *user_ctx);
 
 /* UART 抽象驱动，用于解耦 AT 核心与具体硬件 */
 typedef struct
@@ -73,41 +79,14 @@ extern const at_uart_driver_t *g_at_driver;
 int at_init(const at_uart_driver_t *driver, void *port_cfg);
 int at_deinit(void);
 
+
+at_result_t at_exec(const char *cmd,at_response_t *resp,uint32_t timeout_ms);
+at_result_t at_exec_ex(const char *cmd, const char *expect, at_response_t *resp, uint32_t timeout_ms);
+
 /* ---- URC 注册 ---- */
-int at_urc_register(const char *prefix, at_urc_handler_t handler, void *user_data);
-int at_urc_unregister(const char *prefix);
+int at_register_urc(const char *prefix, at_urc_handler_t handler, void *user_data);
+int at_unregister_urc(const char *prefix);
 
-/* ---- 阻塞 API (同步) ---- */
-int at_send_command(const char *cmd, at_resp_t *resp, uint32_t timeout_ms);
-int at_send_command_data(const char *cmd, const uint8_t *data, uint32_t data_len,
-                         at_resp_t *resp, uint32_t timeout_ms);
-
-/* ---- 非阻塞 API (异步) ---- */
-int at_send_async(const char *cmd, at_async_callback_t cb, void *user_data,
-                  uint32_t timeout_ms);
-int at_send_data_async(const char *cmd, const uint8_t *data, uint32_t data_len,
-                       at_async_callback_t cb, void *user_data, uint32_t timeout_ms);
-int at_recv_poll(void);     /* 在 Task 循环中周期性调用，驱动接收和解析       */
-
-/* ---- 流缓冲接口 (core/at.c) ---- */
-int at_stream_recv(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms);
-
-/* ---- 底层帧接口 (core/at_frame.c) ---- */
-int at_frame_send(const uint8_t *content, uint32_t content_len);
-int at_frame_recv(at_resp_t *resp, uint32_t timeout_ms);
-int at_frame_send_cmd(const char *cmd, at_resp_t *resp, uint32_t timeout_ms);
-
-/* ---- 解析器接口 (core/at_parser.c) ---- */
-/* 阶段一：帧完成性检测 */
-int              at_parser_feed(const char *data, uint32_t len);
-int              at_parser_check_timeout(uint32_t timeout_ms);
-void             at_parser_get_frame(char *buf, uint32_t *out_len);
-/* 阶段二：帧内容分析 */
-at_resp_status_t at_parser_analyze(const char *frame, uint32_t frame_len,
-                                    char *resp_data, uint32_t *resp_len);
-int              at_parser_urc_register(const char *prefix, at_urc_handler_t handler,
-                                         void *user_data);
-int              at_parser_urc_unregister(const char *prefix);
 
 #ifdef __cplusplus
 }

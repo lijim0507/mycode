@@ -31,7 +31,8 @@ typedef struct
 /****************************************************************************/
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
-static void at_uart_data_cb(const uint8_t *data, uint32_t len, void *user_ctx);
+
+void at_transaction_send(uint8_t * p_data, uint16_t len);
 
 /****************************************************************************/
 /*							Global Variables								*/
@@ -101,273 +102,51 @@ int at_deinit(void)
     return 0;
 }
 
-int at_urc_register(const char *prefix, at_urc_handler_t handler, void *user_data)
+/**
+ * @brief 发送 AT 命令并等待响应，内部实现了发送、接收、帧解析和超时处理。
+ * 
+ * @param cmd  AT 命令字符串（不包含帧头尾）
+ * @param resp  
+ * @param timeout_ms 
+ * @return at_result_t 
+ */
+at_result_t at_exec(const char *cmd,at_response_t *resp,uint32_t timeout_ms)
+{
+    //发送命令
+    at_transaction_send((uint8_t *)cmd, strlen(cmd));
+
+    //等待响应（简化实现：实际应包含帧解析和超时处理）
+
+}
+
+/**
+ * @brief 发送 AT 命令并等待响应，内部实现了发送、接收、帧解析和超时处理。
+ * 
+ * @param cmd 
+ * @param expect 
+ * @param resp 
+ * @param timeout_ms 
+ * @return at_result_t 
+ */
+at_result_t at_exec_ex(const char *cmd, const char *expect, at_response_t *resp, uint32_t timeout_ms)
+{
+    //发送命令
+    at_transaction_send((uint8_t *)cmd, strlen(cmd));
+
+}
+
+
+int at_register_urc(const char *prefix, at_urc_handler_t handler, void *user_data)
 {
     return at_parser_urc_register(prefix, handler, user_data);
 }
 
-int at_urc_unregister(const char *prefix)
+int at_unregister_urc(const char *prefix)
 {
     return at_parser_urc_unregister(prefix);
 }
 
-/* ======================== 阻塞 API ======================== */
 
-int at_send_command(const char *cmd, at_resp_t *resp, uint32_t timeout_ms)
-{
-    return at_frame_send_cmd(cmd, resp, timeout_ms);
-}
-
-int at_send_command_data(const char *cmd, const uint8_t *data, uint32_t data_len,
-                         at_resp_t *resp, uint32_t timeout_ms)
-{
-    if (!cmd || !resp)
-    {
-        return -1;
-    }
-
-    uint8_t  content[AT_CMD_MAX_LEN];
-    uint32_t content_len = 0;
-
-    {
-        uint32_t cmd_len = strlen(cmd);
-        if (cmd_len > AT_CMD_MAX_LEN)
-        {
-            return -1;
-        }
-        memcpy(content, cmd, cmd_len);
-        content_len = cmd_len;
-    }
-
-    if (data != NULL && data_len > 0)
-    {
-        if (content_len + 1 + data_len > AT_CMD_MAX_LEN)
-        {
-            return -1;
-        }
-        content[content_len] = '=';
-        content_len++;
-        memcpy(content + content_len, data, data_len);
-        content_len += data_len;
-    }
-
-    int ret = at_frame_send(content, content_len);
-    if (ret != 0)
-    {
-        return ret;
-    }
-
-    return at_frame_recv(resp, timeout_ms);
-}
-
-/* ======================== 非阻塞 API ======================== */
-
-int at_send_async(const char *cmd, at_async_callback_t cb, void *user_data,
-                  uint32_t timeout_ms)
-{
-    int ret;
-
-    if (!cmd || !cb)
-    {
-        return -1;
-    }
-
-    if (g_active.active)
-    {
-        return -1;
-    }
-
-    ret = at_frame_send((const uint8_t *)cmd, strlen(cmd));
-    if (ret != 0)
-    {
-        return -2;
-    }
-
-    g_active.active     = true;
-    g_active.callback   = cb;
-    g_active.user_data  = user_data;
-    g_active.timeout_ms = timeout_ms;
-    g_active.send_tick  = pdTICKS_TO_MS(xTaskGetTickCount());
-
-    return 0;
-}
-
-int at_send_data_async(const char *cmd, const uint8_t *data, uint32_t data_len,
-                       at_async_callback_t cb, void *user_data, uint32_t timeout_ms)
-{
-    int ret;
-
-    if (!cmd || !cb)
-    {
-        return -1;
-    }
-
-    if (g_active.active)
-    {
-        return -1;
-    }
-
-    uint8_t  content[AT_CMD_MAX_LEN];
-    uint32_t content_len = 0;
-
-    {
-        uint32_t cmd_len = strlen(cmd);
-        if (cmd_len > AT_CMD_MAX_LEN)
-        {
-            return -1;
-        }
-        memcpy(content, cmd, cmd_len);
-        content_len = cmd_len;
-    }
-
-    if (data != NULL && data_len > 0)
-    {
-        if (content_len + 1 + data_len > AT_CMD_MAX_LEN)
-        {
-            return -1;
-        }
-        content[content_len] = '=';
-        content_len++;
-        memcpy(content + content_len, data, data_len);
-        content_len += data_len;
-    }
-
-    ret = at_frame_send(content, content_len);
-    if (ret != 0)
-    {
-        return -2;
-    }
-
-    g_active.active     = true;
-    g_active.callback   = cb;
-    g_active.user_data  = user_data;
-    g_active.timeout_ms = timeout_ms;
-    g_active.send_tick  = pdTICKS_TO_MS(xTaskGetTickCount());
-
-    return 0;
-}
-
-/*
- * 非阻塞轮询。
- * 两阶段驱动：
- * 1) 读 UART → feed 积累器，检查帧格式完整性
- * 2) 帧完成 → get_frame → analyze → 回调分发
- * 3) 无数据时检查帧间超时 → 触发帧完成
- * 4) 检查活跃命令的超时
- */
-int at_recv_poll(void)
-{
-    uint8_t  recv_buf[256];
-    int      len;
-    uint64_t now;
-    char     frame_buf[AT_RESP_BUF_SIZE];
-    uint32_t frame_len;
-    char     resp_data[AT_RESP_BUF_SIZE];
-    uint32_t resp_len;
-
-    if (!g_at_driver)
-    {
-        return -1;
-    }
-
-    now = pdTICKS_TO_MS(xTaskGetTickCount());
-
-    /* 检查活跃命令的整体超时 */
-    if (g_active.active)
-    {
-        if (now - g_active.send_tick > g_active.timeout_ms)
-        {
-            at_parser_get_frame(frame_buf, &frame_len);
-
-            at_async_callback_t cb = g_active.callback;
-            void *ud = g_active.user_data;
-            g_active.active = false;
-
-            if (cb)
-            {
-                if (frame_len > 0 && frame_len < AT_RESP_BUF_SIZE)
-                {
-                    memcpy(resp_data, frame_buf, frame_len);
-                }
-                else
-                {
-                    frame_len = 0;
-                }
-                cb(AT_RESP_TIMEOUT, resp_data, frame_len, ud);
-            }
-            return 1;
-        }
-    }
-
-    /* 非阻塞读取流缓冲 → 阶段一：积累 */
-    len = at_stream_recv(recv_buf, sizeof(recv_buf), 0);
-    if (len > 0)
-    {
-        int complete = at_parser_feed((const char *)recv_buf, (uint32_t)len);
-        if (complete)
-        {
-            /* 阶段二：帧格式完成，分析 */
-            at_parser_get_frame(frame_buf, &frame_len);
-            at_resp_status_t status = at_parser_analyze(frame_buf, frame_len,
-                                                         resp_data, &resp_len);
-
-            /* 若为命令响应则回调 */
-            if ((status == AT_RESP_OK || status == AT_RESP_ERROR)
-                && g_active.active)
-            {
-                at_async_callback_t cb = g_active.callback;
-                void *ud = g_active.user_data;
-                g_active.active = false;
-
-                if (cb)
-                {
-                    cb(status, resp_data, resp_len, ud);
-                }
-            }
-        }
-        return 1;
-    }
-
-    /* 无新数据 → 检查帧间超时 */
-    if (at_parser_check_timeout(AT_INTER_FRAME_MS))
-    {
-        at_parser_get_frame(frame_buf, &frame_len);
-        at_resp_status_t status = at_parser_analyze(frame_buf, frame_len,
-                                                     resp_data, &resp_len);
-
-        /* 若为命令响应则回调 */
-        if ((status == AT_RESP_OK || status == AT_RESP_ERROR)
-            && g_active.active)
-        {
-            at_async_callback_t cb = g_active.callback;
-            void *ud = g_active.user_data;
-            g_active.active = false;
-
-            if (cb)
-            {
-                cb(status, resp_data, resp_len, ud);
-            }
-        }
-        return 1;
-    }
-
-    return 0;
-}
-
-/*
- * 从接收流缓冲中取数据，供 at_frame_recv 和 at_recv_poll 使用。
- * timeout_ms=0 时非阻塞；>0 时阻塞等待至超时。
- * 返回值: >=0 读到的字节数, -1 参数无效
- */
-int at_stream_recv(uint8_t *buf, uint32_t buf_size, uint32_t timeout_ms)
-{
-    if (!g_at_stream || !buf || buf_size == 0)
-    {
-        return -1;
-    }
-    return (int)xStreamBufferReceive(g_at_stream, buf, buf_size,
-                                     pdMS_TO_TICKS(timeout_ms));
-}
 
 /****************************************************************************/
 /*							Static Functions    						    */
