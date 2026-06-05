@@ -35,7 +35,7 @@
 /****************************************************************************/
 
 uint8_t g_transaction_flag = 0;
-at_result_t g_transaction_result;
+at_result_t g_transaction_result = AT_RESULT_NONE;
 
 uint8_t g_resp_line_buf[AT_RESP_MAX_LINES][AT_RESP_BUF_SIZE];
 uint16_t g_resp_line_len[AT_RESP_MAX_LINES];
@@ -43,7 +43,7 @@ uint16_t g_resp_line_num = 0;
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
-void at_transaction_send(uint8_t * p_data, uint16_t len)
+int at_transaction_send(uint8_t * p_data, uint16_t len)
 {
 	if (!g_at_driver || !g_at_driver->send || !p_data || len == 0)
 	{
@@ -137,6 +137,7 @@ bool at_transaction_get_respond(uint8_t *p_buffer, uint16_t len)
 void at_transaction_reset(void)
 {
     g_transaction_flag = 0;
+    g_transaction_result = AT_RESULT_NONE;
 
     for (int i = 0; i < AT_RESP_MAX_LINES; i++)
     {

@@ -35,9 +35,11 @@ typedef enum
 
 typedef enum
 {
-    AT_RESULT_OK,
-    AT_RESULT_ERROR,
-    AT_RESULT_TIMEOUT,
+    AT_RESULT_NONE = -1,                                     /* 事务未完成                    */
+    AT_RESULT_OK = 0,                                        /* 响应成功                      */
+    AT_RESULT_ERROR,                                         /* 响应失败                      */
+    AT_RESULT_TIMEOUT,                                       /* 超时无响应                    */
+    AT_RESULT_ENTER_PAYLOAD,                                 /* 进入数据输入模式 (收到 >)      */
 } at_result_t;
 
 
@@ -55,6 +57,9 @@ typedef void (*at_async_callback_t)(at_result_t result,
 /* URC 行回调 (收到主动上报时调用) */
 typedef void (*at_urc_handler_t)(const char *line, void *user_data);
 
+
+/* 接收数据回调：port 层收到 UART 数据后调用此回调上抛给 core 层 */
+typedef void (*at_uart_recv_cb_t)(const uint8_t *data, uint32_t len, void *user_ctx);
 
 /* UART 抽象驱动，用于解耦 AT 核心与具体硬件 */
 typedef struct
@@ -81,7 +86,7 @@ int at_deinit(void);
 
 
 at_result_t at_exec(const char *cmd,at_response_t *resp,uint32_t timeout_ms);
-at_result_t at_exec_ex(const char *cmd, const char *expect, at_response_t *resp, uint32_t timeout_ms);
+at_result_t at_exec_ex(const char *cmd, const char *content, const char *expect, at_response_t *resp, uint32_t timeout_ms);
 
 /* ---- URC 注册 ---- */
 int at_register_urc(const char *prefix, at_urc_handler_t handler, void *user_data);

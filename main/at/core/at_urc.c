@@ -33,12 +33,6 @@ typedef struct
 /*							Global Variables								*/
 /****************************************************************************/
 
-/* ── 阶段一：帧积累 ── */
-static char     g_accum_buf[AT_RESP_BUF_SIZE];              /* 原始数据积累缓冲               */
-static uint32_t g_accum_len;                                /* 已积累长度                     */
-static uint64_t g_last_tick;                                /* 最后收到数据的时刻             */
-
-/* ── 阶段二：帧分析 ── */
 static at_urc_entry_t g_urc_table[AT_URC_MAX_ENTRIES];     /* URC 注册表                    */
 static uint8_t        g_urc_count;                          /* 已注册 URC 数量               */
 
