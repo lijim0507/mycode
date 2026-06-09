@@ -143,7 +143,7 @@ static void send_byte(uint8_t byte)
  * @return 0: 成功
  * @note   根据当前 SystemCoreClock 自动缩放时序参数
  */
-static int stm32_bitbang_init(void *config)
+static int stm32_bitbang_init(void)
 {
     uint32_t sysclk;
     uint32_t scale;

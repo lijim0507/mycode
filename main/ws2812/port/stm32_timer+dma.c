@@ -1,7 +1,7 @@
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-#include "ws2812_port.h"
+#include "drv_ws2812.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -36,7 +36,7 @@
 
 /* ---- ARM CMSIS 内联函数 (Cortex-M 系列) ---- */
 #if defined(__CC_ARM) || defined(__ARMCC_VERSION)
-#include <arm_compat.h>
+//#include <arm_compat.h>
 #else
 #include <cmsis_gcc.h>
 #endif
@@ -53,40 +53,42 @@
  * 默认配置: TIM1_CH1, PE9, GPIO_AF1_TIM1, 240MHz, 64 灯
  */
 #ifndef WS2812_STM32_TIM_HANDLE
-extern TIM_HandleTypeDef htim1;
-#define WS2812_STM32_TIM_HANDLE     (&htim1)
+extern TIM_HandleTypeDef htim4;
+#define WS2812_STM32_TIM_HANDLE     (&htim4)
 #endif
 
 #ifndef WS2812_STM32_TIM_CHANNEL
-#define WS2812_STM32_TIM_CHANNEL    TIM_CHANNEL_1
+#define WS2812_STM32_TIM_CHANNEL    TIM_CHANNEL_2
+#endif
+
+
+#ifndef WS2812_STM32_TIM_CLK_PSC
+#define WS2812_STM32_TIM_CLK_PSC    2
 #endif
 
 #ifndef WS2812_STM32_TIM_CLK_HZ
-#define WS2812_STM32_TIM_CLK_HZ     48 * 1000000U
+#define WS2812_STM32_TIM_CLK_HZ     (240 * 1000000U / WS2812_STM32_TIM_CLK_PSC)
 #endif
 
 #ifndef WS2812_STM32_GPIO_PORT
-#define WS2812_STM32_GPIO_PORT      GPIOA
+#define WS2812_STM32_GPIO_PORT      GPIOD
 #endif
 
 #ifndef WS2812_STM32_GPIO_PIN
-#define WS2812_STM32_GPIO_PIN       GPIO_PIN_15
+#define WS2812_STM32_GPIO_PIN       GPIO_PIN_13
 #endif
 
 #ifndef WS2812_STM32_GPIO_AF
-#define WS2812_STM32_GPIO_AF        GPIO_AF1_TIM1
+#define WS2812_STM32_GPIO_AF        GPIO_AF2_TIM4
 #endif
 
-#ifndef WS2812_STM32_NUM_LEDS
-#define WS2812_STM32_NUM_LEDS       64U
-#endif
 
 /**
  * @brief  WS2812B 时序参数 (固定值，无需修改)
  */
 #define WS2812_BIT_PERIOD_NS      1250U     /* 位周期 (1250 ns = 800kHz)   */
-#define WS2812_T0H_NS              400U     /* 0 码高电平时间 (ns)         */
-#define WS2812_T1H_NS              800U     /* 1 码高电平时间 (ns)         */
+#define WS2812_T0H_NS              350U     /* 0 码高电平时间 (ns)         */
+#define WS2812_T1H_NS              850U     /* 1 码高电平时间 (ns)         */
 #define WS2812_RESET_CYCLES         50U     /* RESET 脉冲所占 PWM 周期数   */
 
 /****************************************************************************/
@@ -103,8 +105,8 @@ typedef struct
     uint32_t           code_0;          /* 逻辑 0 的 CCR 值               */
     uint32_t           code_1;          /* 逻辑 1 的 CCR 值               */
     uint32_t           arr;             /* 自动重装载值                   */
-    uint32_t          *dma_buf;         /* DMA 发送缓冲区                 */
-    uint32_t           buf_capacity;    /* 缓冲区容量 (uint32_t 个数)    */
+    uint16_t          *dma_buf;         /* DMA 发送缓冲区                 */
+    uint32_t           buf_capacity;    /* 缓冲区容量 (uint16_t 个数)    */
     volatile bool      busy;            /* 发送忙标志                     */
 } stm32_timer_dma_ctx_t;
 
@@ -122,7 +124,7 @@ static int stm32_timer_dma_deinit(void);
 /****************************************************************************/
 
 static stm32_timer_dma_ctx_t g_stm32;
-
+static uint16_t g_dma_buf[WS2812_STM32_NUM_LEDS * 24U + WS2812_RESET_CYCLES]; /* 预分配 DMA 缓冲区 */
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
@@ -138,9 +140,9 @@ static int stm32_timer_dma_init(void)
     TIM_OC_InitTypeDef sConfigOC;
     GPIO_InitTypeDef gpio_init;
     TIM_HandleTypeDef *htim;
-    uint32_t ticks_per_bit;
-    uint32_t ticks_t0h;
-    uint32_t ticks_t1h;
+    uint32_t ticks_per_bit = 0;
+    uint32_t ticks_t0h = 0;
+    uint32_t ticks_t1h = 0;
 
     memset(&g_stm32, 0, sizeof(g_stm32));
 
@@ -161,11 +163,27 @@ static int stm32_timer_dma_init(void)
     g_stm32.tim_channel = WS2812_STM32_TIM_CHANNEL;
 
     g_stm32.buf_capacity = WS2812_STM32_NUM_LEDS * 24U + WS2812_RESET_CYCLES;
-    g_stm32.dma_buf = (uint32_t *)malloc(g_stm32.buf_capacity * sizeof(uint32_t));
-    if (g_stm32.dma_buf == NULL)
-    {
-        return -2;
-    }
+    g_stm32.dma_buf = g_dma_buf;
+
+    //-------------------------------------------------------
+
+    //timer 配置
+    htim = WS2812_STM32_TIM_HANDLE;
+
+    htim->Init.Prescaler         = WS2812_STM32_TIM_CLK_PSC - 1U;
+    htim->Init.CounterMode       = TIM_COUNTERMODE_UP;
+    htim->Init.Period            = g_stm32.arr;
+    htim->Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
+    htim->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+
+    HAL_TIM_Base_Init(htim);
+    
+    sConfigOC.OCMode     = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse      = 0;
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+
+    HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, g_stm32.tim_channel);
 
     //gpio 配置
     gpio_init.Pin       = WS2812_STM32_GPIO_PIN;
@@ -174,24 +192,6 @@ static int stm32_timer_dma_init(void)
     gpio_init.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
     gpio_init.Alternate = WS2812_STM32_GPIO_AF;
     HAL_GPIO_Init(WS2812_STM32_GPIO_PORT, &gpio_init);
-
-    //timer 配置
-    htim = WS2812_STM32_TIM_HANDLE;
-
-    htim->Init.Prescaler         = 0;
-    htim->Init.CounterMode       = TIM_COUNTERMODE_UP;
-    htim->Init.Period            = g_stm32.arr;
-    htim->Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
-    htim->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-
-    HAL_TIM_PWM_Init(htim);
-    
-    sConfigOC.OCMode     = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse      = 0;
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-
-    HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, g_stm32.tim_channel);
 
     g_stm32.busy = false;
 
@@ -214,6 +214,8 @@ static int stm32_timer_dma_transmit(const uint8_t *data, uint32_t len)
         return -1;
     }
 
+    memset(g_stm32.dma_buf, 0, g_stm32.buf_capacity * sizeof(uint16_t));
+
     bit_idx = 0;
 
     for (uint32_t i = 0; i < len; i++)
@@ -233,15 +235,13 @@ static int stm32_timer_dma_transmit(const uint8_t *data, uint32_t len)
         }
     }
 
-    for (uint32_t i = 0; i < WS2812_RESET_CYCLES; i++)
-    {
-        g_stm32.dma_buf[bit_idx++] = 0;
-    }
+    SCB_CleanDCache_by_Addr((uint32_t *)((uintptr_t)g_stm32.dma_buf & ~0x1FU),
+                            (g_stm32.buf_capacity * sizeof(uint16_t) + 32U + ((uintptr_t)g_stm32.dma_buf & 0x1FU)));
 
     g_stm32.busy = true;
 
     HAL_TIM_PWM_Start_DMA(g_stm32.htim, g_stm32.tim_channel,
-                          g_stm32.dma_buf, (uint16_t)bit_idx);
+                          (uint32_t *)g_stm32.dma_buf, (uint16_t)g_stm32.buf_capacity);
 
     return 0;
 }
@@ -282,7 +282,6 @@ static int stm32_timer_dma_deinit(void)
 
     if (g_stm32.dma_buf != NULL)
     {
-        free(g_stm32.dma_buf);
         g_stm32.dma_buf = NULL;
     }
 

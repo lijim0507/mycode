@@ -2,10 +2,9 @@
 /*								Includes									*/
 /****************************************************************************/
 #include "ws2812.h"
-#include "ws2812_port.h"
+#include "drv_ws2812.h"
 
 #include <string.h>
-#include <stdlib.h>
 
 /****************************************************************************/
 /*								Macros										*/
@@ -26,8 +25,8 @@ static void ws2812_encode(const uint8_t *pixels, uint8_t *output, uint32_t num_l
 /****************************************************************************/
 
 static const ws2812_driver_t *g_driver;
-static uint8_t  *g_pixel_buf;       /* 像素缓冲区：GRB GRB GRB ...           */
-static uint8_t  *g_encode_buf;      /* 编码后发送缓冲区                       */
+static uint8_t   g_pixel_buf[WS2812_STM32_NUM_LEDS * 3];   /* 像素缓冲区：GRB GRB GRB ... */
+static uint8_t   g_encode_buf[WS2812_STM32_NUM_LEDS * 3];  /* 编码后发送缓冲区             */
 static uint32_t  g_num_leds;
 static uint8_t   g_brightness = 255;
 static bool      g_initialized;
@@ -44,9 +43,23 @@ static uint32_t  g_encode_buf_len;
  * @param  num_leds LED 灯珠数量
  * @return 0: 成功, -1: 参数错误, -2: 内存不足, -3: 硬件初始化失败
  */
-int ws2812_init(const ws2812_driver_t *driver, void *port_cfg, uint32_t num_leds)
+int ws2812_init(uint32_t num_leds)
 {
-    if (!driver || !driver->init || !driver->transmit || num_leds == 0) 
+    if (num_leds == 0 || num_leds > WS2812_STM32_NUM_LEDS) 
+    {
+        return -1;
+    }
+
+    g_driver = ws2812_port_get_driver();
+    if (!g_driver ) 
+    {
+        return -1;
+    }
+    if (!g_driver->init) 
+    {
+        return -1;
+    }
+    if (!g_driver->transmit) 
     {
         return -1;
     }
@@ -58,30 +71,16 @@ int ws2812_init(const ws2812_driver_t *driver, void *port_cfg, uint32_t num_leds
 
     g_num_leds = num_leds;
     g_brightness = 255;
-
-    g_pixel_buf = (uint8_t *)calloc(num_leds * 3, 1);
     g_encode_buf_len = num_leds * 3;
-    g_encode_buf = (uint8_t *)malloc(g_encode_buf_len);
 
-    if (!g_pixel_buf || !g_encode_buf) 
-    {
-        free(g_pixel_buf);
-        free(g_encode_buf);
-        g_pixel_buf = NULL;
-        g_encode_buf = NULL;
-        return -2;
-    }
+    memset(g_pixel_buf, 0, sizeof(g_pixel_buf));
+    memset(g_encode_buf, 0, sizeof(g_encode_buf));
 
-    if (driver->init(port_cfg) != 0) 
+    if (g_driver->init() != 0) 
     {
-        free(g_pixel_buf);
-        free(g_encode_buf);
-        g_pixel_buf = NULL;
-        g_encode_buf = NULL;
         return -3;
     }
 
-    g_driver = driver;
     g_initialized = true;
     return 0;
 }
@@ -102,12 +101,9 @@ int ws2812_deinit(void)
         g_driver->deinit();
     }
 
-    free(g_pixel_buf);
-    free(g_encode_buf);
-    g_pixel_buf = NULL;
-    g_encode_buf = NULL;
     g_driver = NULL;
     g_num_leds = 0;
+    g_encode_buf_len = 0;
     g_initialized = false;
     return 0;
 }

@@ -51,7 +51,7 @@ typedef enum {
  *         每个平台只需实现这四个函数指针即可完成移植。
  */
 typedef struct ws2812_driver {
-    int (*init)(void *config);                      /* 硬件初始化           */
+    int (*init)(void);                      /* 硬件初始化           */
     int (*transmit)(const uint8_t *data, uint32_t len); /* 发送已编码数据     */
     int (*is_busy)(void);                           /* 查询发送是否完成     */
     int (*deinit)(void);                            /* 反初始化             */
@@ -67,12 +67,10 @@ typedef struct ws2812_driver {
 
 /**
  * @brief  初始化 WS2812 驱动库
- * @param  driver   平台驱动指针
- * @param  port_cfg 平台相关配置（如 GPIO 编号），传 NULL 使用默认值
  * @param  num_leds LED 灯珠数量
  * @return 0: 成功, -1: 参数错误, -2: 内存不足, -3: 硬件初始化失败
  */
-int  ws2812_init(const ws2812_driver_t *driver, void *port_cfg, uint32_t num_leds);
+int ws2812_init(uint32_t num_leds);
 
 /**
  * @brief  反初始化 WS2812 驱动库
