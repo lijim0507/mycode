@@ -55,8 +55,40 @@ module_name/
 1. 在 `port/xxx_port.h` 中定义函数指针结构体作为硬件抽象接口
 2. 每个 `port/xxx_platform.c` 实现该接口的所有函数
 3. 提供一个 `xxx_port_get_driver()` 函数，返回填充好的驱动实例指针
-4. Core 层通过 `xxx_init(driver, config, ...)` 注入驱动实例
+4. Core 层通过 `xxx_init(driver, ...)` 注入驱动实例
 5. 模块状态使用 `g_` 前缀的静态全局变量在 core 层统一管理
+
+### Port 层 init 函数自封装规则
+
+Port 层的 `init` 函数**不得接受硬件配置参数**（如 `void *config`/引脚号/外设句柄等），所有硬件相关参数必须在 `port/xxx_platform.c` 文件内部通过宏定义（`#define`）或静态变量自行配置：
+
+1. **init 函数签名为 `int (*init)(void)`**（无 config 形参），硬件参数通过文件顶部 `#ifndef` 宏定义指定默认值，允许用户在编译选项中覆盖
+2. **Core 层的 `xxx_init()` 才保留 config 参数**（如有模块级配置需求），但该参数仅传递模块级/逻辑层配置，不传递底层硬件参数
+3. 外部调用者（如 main.c、上层模块）不应也不需要知道 port 层的硬件细节
+
+示例对比：
+- **正确**（port init 自封装）：
+  ```c
+  // port/stm32_isotp_port.c
+  #ifndef ISOTP_STM32_TWAI_TX_GPIO
+  #define ISOTP_STM32_TWAI_TX_GPIO   GPIO_NUM_21
+  #endif
+  static int esp32_isotp_init(void) { /* 内部使用宏定义的引脚 */ }
+
+  static const isotp_port_driver_t driver = {
+      .init = esp32_isotp_init,  // 无 config 参数
+      ...
+  };
+  ```
+- **错误**（init 暴露硬件配置）：
+  ```c
+  // port/esp32_isotp_port.c
+  static int esp32_isotp_init(void *config)  // 不允许
+  {
+      isotp_esp32_cfg_t *cfg = (isotp_esp32_cfg_t *)config;
+      // 从外部传入 TX/RX 引脚...
+  }
+  ```
 
 ### 模块内文件拆分
 

@@ -1,12 +1,11 @@
-
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
 #include "isotp.h"
 
 #include <stdint.h>
-
-#include "assert.h"
+#include <string.h>
+#include <assert.h>
 
 /****************************************************************************/
 /*								Macros										*/
@@ -19,15 +18,39 @@
 /****************************************************************************/
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
+static uint8_t isotp_ms_to_st_min(uint8_t ms);
+static uint8_t isotp_st_min_to_ms(uint8_t st_min);
+
+static int isotp_send_flow_control(isotp_handle_t *handle, uint8_t flow_status, uint8_t block_size, uint8_t st_min_ms);
+static int isotp_send_single_frame(isotp_handle_t *handle, uint32_t id);
+static int isotp_send_first_frame(isotp_handle_t *handle, uint32_t id);
+static int isotp_send_consecutive_frame(isotp_handle_t *handle);
+
+static int isotp_receive_single_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len);
+static int isotp_receive_first_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len);
+static int isotp_receive_consecutive_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len);
+static int isotp_receive_flow_control_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len);
+
+static void isotp_debug(const char *message);
 
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
+static const isotp_port_driver_t *g_isotp_driver;
+static uint8_t g_isotp_initialized;
 
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
-/* st_min to microsecond */
+static void isotp_debug(const char *message)
+{
+    if (g_isotp_driver && g_isotp_driver->debug)
+    {
+        g_isotp_driver->debug(message);
+    }
+}
+
+/* st_min unit: millisecond, to STmin format */
 static uint8_t isotp_ms_to_st_min(uint8_t ms)
 {
     uint8_t st_min;
@@ -41,7 +64,7 @@ static uint8_t isotp_ms_to_st_min(uint8_t ms)
     return st_min;
 }
 
-/* st_min to msec  */
+/* STmin format to millisecond */
 static uint8_t isotp_st_min_to_ms(uint8_t st_min)
 {
     uint8_t ms;
@@ -62,12 +85,17 @@ static uint8_t isotp_st_min_to_ms(uint8_t st_min)
     return ms;
 }
 
-static int isotp_send_flow_control(isotp_handle_t* handle, uint8_t flow_status, uint8_t block_size, uint8_t st_min_ms)
+static int isotp_send_flow_control(isotp_handle_t *handle, uint8_t flow_status, uint8_t block_size, uint8_t st_min_ms)
 {
     isotp_can_message_t message;
     int ret;
 
-    /* setup message  */
+    if (!g_isotp_driver || !g_isotp_driver->send)
+    {
+        return ISOTP_RET_ERROR;
+    }
+
+    /* setup message */
     message.as.flow_control.type = ISOTP_PCI_TYPE_FLOW_CONTROL_FRAME;
     message.as.flow_control.fs = flow_status;
     message.as.flow_control.bs = block_size;
@@ -76,23 +104,28 @@ static int isotp_send_flow_control(isotp_handle_t* handle, uint8_t flow_status, 
     /* send message */
 #ifdef ISO_TP_FRAME_PADDING
     (void)memset(message.as.flow_control.reserve, 0, sizeof(message.as.flow_control.reserve));
-    ret = isotp_user_send_can(handle->send_arbitration_id, message.as.data_array.ptr, sizeof(message));
+    ret = g_isotp_driver->send(handle->receive_arbitration_id, message.as.data_array.ptr, sizeof(message));
 #else
-    ret = isotp_user_send_can(handle->send_arbitration_id, message.as.data_array.ptr, 3);
+    ret = g_isotp_driver->send(handle->receive_arbitration_id, message.as.data_array.ptr, 3);
 #endif
 
     return ret;
 }
 
-static int isotp_send_single_frame(isotp_handle_t* handle, uint32_t id)
+static int isotp_send_single_frame(isotp_handle_t *handle, uint32_t id)
 {
     isotp_can_message_t message;
     int ret;
 
-    /* multi frame message length must greater than 7  */
+    if (!g_isotp_driver || !g_isotp_driver->send)
+    {
+        return ISOTP_RET_ERROR;
+    }
+
+    /* single frame message length must not exceed 7 */
     assert(handle->send_size <= 7);
 
-    /* setup message  */
+    /* setup message */
     message.as.single_frame.type = ISOTP_PCI_TYPE_SINGLE;
     message.as.single_frame.sf_dl = (uint8_t)handle->send_size;
     (void)memcpy(message.as.single_frame.data, handle->send_buffer, handle->send_size);
@@ -100,30 +133,35 @@ static int isotp_send_single_frame(isotp_handle_t* handle, uint32_t id)
     /* send message */
 #ifdef ISO_TP_FRAME_PADDING
     (void)memset(message.as.single_frame.data + handle->send_size, 0, sizeof(message.as.single_frame.data) - handle->send_size);
-    ret = isotp_user_send_can(id, message.as.data_array.ptr, sizeof(message));
+    ret = g_isotp_driver->send(id, message.as.data_array.ptr, sizeof(message));
 #else
-    ret = isotp_user_send_can(id, message.as.data_array.ptr, handle->send_size + 1);
+    ret = g_isotp_driver->send(id, message.as.data_array.ptr, handle->send_size + 1);
 #endif
 
     return ret;
 }
 
-static int isotp_send_first_frame(isotp_handle_t* handle, uint32_t id)
+static int isotp_send_first_frame(isotp_handle_t *handle, uint32_t id)
 {
     isotp_can_message_t message;
     int ret;
 
-    /* multi frame message length must greater than 7  */
+    if (!g_isotp_driver || !g_isotp_driver->send)
+    {
+        return ISOTP_RET_ERROR;
+    }
+
+    /* multi frame message length must greater than 7 */
     assert(handle->send_size > 7);
 
-    /* setup message  */
+    /* setup message */
     message.as.first_frame.type = ISOTP_PCI_TYPE_FIRST_FRAME;
     message.as.first_frame.ff_dl_low = (uint8_t)handle->send_size;
     message.as.first_frame.ff_dl_high = (uint8_t)(0x0F & (handle->send_size >> 8));
     (void)memcpy(message.as.first_frame.data, handle->send_buffer, sizeof(message.as.first_frame.data));
 
     /* send message */
-    ret = isotp_user_send_can(id, message.as.data_array.ptr, sizeof(message));
+    ret = g_isotp_driver->send(id, message.as.data_array.ptr, sizeof(message));
     if (ISOTP_RET_OK == ret)
     {
         handle->send_offset += sizeof(message.as.first_frame.data);
@@ -133,16 +171,21 @@ static int isotp_send_first_frame(isotp_handle_t* handle, uint32_t id)
     return ret;
 }
 
-static int isotp_send_consecutive_frame(isotp_handle_t* handle)
+static int isotp_send_consecutive_frame(isotp_handle_t *handle)
 {
     isotp_can_message_t message;
     uint16_t data_length;
     int ret;
 
-    /* multi frame message length must greater than 7  */
+    if (!g_isotp_driver || !g_isotp_driver->send)
+    {
+        return ISOTP_RET_ERROR;
+    }
+
+    /* multi frame message length must greater than 7 */
     assert(handle->send_size > 7);
 
-    /* setup message  */
+    /* setup message */
     message.as.consecutive_frame.type = ISOTP_PCI_TYPE_CONSECUTIVE_FRAME;
     message.as.consecutive_frame.sn = handle->send_sn;
     data_length = handle->send_size - handle->send_offset;
@@ -155,9 +198,9 @@ static int isotp_send_consecutive_frame(isotp_handle_t* handle)
     /* send message */
 #ifdef ISO_TP_FRAME_PADDING
     (void)memset(message.as.consecutive_frame.data + data_length, 0, sizeof(message.as.consecutive_frame.data) - data_length);
-    ret = isotp_user_send_can(handle->send_arbitration_id, message.as.data_array.ptr, sizeof(message));
+    ret = g_isotp_driver->send(handle->send_arbitration_id, message.as.data_array.ptr, sizeof(message));
 #else
-    ret = isotp_user_send_can(handle->send_arbitration_id, message.as.data_array.ptr, data_length + 1);
+    ret = g_isotp_driver->send(handle->send_arbitration_id, message.as.data_array.ptr, data_length + 1);
 #endif
     if (ISOTP_RET_OK == ret)
     {
@@ -171,13 +214,20 @@ static int isotp_send_consecutive_frame(isotp_handle_t* handle)
     return ret;
 }
 
-static int isotp_receive_single_frame(isotp_handle_t* handle, isotp_can_message_t* message, uint8_t len)
+static int isotp_receive_single_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     /* check data length */
     if ((0 == message->as.single_frame.sf_dl) || (message->as.single_frame.sf_dl > (len - 1)))
     {
-        isotp_user_debug("Single-frame length too small.");
+        isotp_debug("Single-frame length too small.");
         return ISOTP_RET_LENGTH;
+    }
+
+    /* check buffer overflow */
+    if (message->as.single_frame.sf_dl > handle->receive_buf_size)
+    {
+        isotp_debug("Single-frame length exceeds receive buffer.");
+        return ISOTP_RET_OVERFLOW;
     }
 
     /* copying data */
@@ -187,13 +237,13 @@ static int isotp_receive_single_frame(isotp_handle_t* handle, isotp_can_message_
     return ISOTP_RET_OK;
 }
 
-static int isotp_receive_first_frame(isotp_handle_t* handle, isotp_can_message_t* message, uint8_t len)
+static int isotp_receive_first_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     uint16_t payload_length;
 
     if (8 != len)
     {
-        isotp_user_debug("First frame should be 8 bytes in length.");
+        isotp_debug("First frame should be 8 bytes in length.");
         return ISOTP_RET_LENGTH;
     }
 
@@ -201,16 +251,16 @@ static int isotp_receive_first_frame(isotp_handle_t* handle, isotp_can_message_t
     payload_length = message->as.first_frame.ff_dl_high;
     payload_length = (payload_length << 8) + message->as.first_frame.ff_dl_low;
 
-    /* should not use multiple frame transmition */
+    /* should not use multiple frame transmission */
     if (payload_length <= 7)
     {
-        isotp_user_debug("Should not use multiple frame transmission.");
+        isotp_debug("Should not use multiple frame transmission.");
         return ISOTP_RET_LENGTH;
     }
 
     if (payload_length > handle->receive_buf_size)
     {
-        isotp_user_debug("Multi-frame response too large for receiving buffer.");
+        isotp_debug("Multi-frame response too large for receiving buffer.");
         return ISOTP_RET_OVERFLOW;
     }
 
@@ -223,7 +273,7 @@ static int isotp_receive_first_frame(isotp_handle_t* handle, isotp_can_message_t
     return ISOTP_RET_OK;
 }
 
-static int isotp_receive_consecutive_frame(isotp_handle_t* handle, isotp_can_message_t* message, uint8_t len)
+static int isotp_receive_consecutive_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     uint16_t remaining_bytes;
 
@@ -241,7 +291,7 @@ static int isotp_receive_consecutive_frame(isotp_handle_t* handle, isotp_can_mes
     }
     if (remaining_bytes > len - 1)
     {
-        isotp_user_debug("Consecutive frame too short.");
+        isotp_debug("Consecutive frame too short.");
         return ISOTP_RET_LENGTH;
     }
 
@@ -257,12 +307,12 @@ static int isotp_receive_consecutive_frame(isotp_handle_t* handle, isotp_can_mes
     return ISOTP_RET_OK;
 }
 
-static int isotp_receive_flow_control_frame(isotp_handle_t* handle, isotp_can_message_t* message, uint8_t len)
+static int isotp_receive_flow_control_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     /* check message length */
     if (len < 3)
     {
-        isotp_user_debug("Flow control frame too short.");
+        isotp_debug("Flow control frame too short.");
         return ISOTP_RET_LENGTH;
     }
 
@@ -273,32 +323,75 @@ static int isotp_receive_flow_control_frame(isotp_handle_t* handle, isotp_can_me
 /*							Exported Functions    						    */
 /****************************************************************************/
 
-int isotp_send(isotp_handle_t* handle, const uint8_t payload[], uint16_t size)
+int isotp_init(const isotp_port_driver_t *driver)
+{
+    if (!driver || !driver->send || !driver->get_ms)
+    {
+        return ISOTP_RET_ERROR;
+    }
+
+    if (g_isotp_initialized)
+    {
+        isotp_deinit();
+    }
+
+    if (driver->init && driver->init() != 0)
+    {
+        return ISOTP_RET_ERROR;
+    }
+
+    g_isotp_driver = driver;
+    g_isotp_initialized = 1;
+
+    return ISOTP_RET_OK;
+}
+
+int isotp_deinit(void)
+{
+    if (!g_isotp_initialized)
+    {
+        return ISOTP_RET_OK;
+    }
+
+    if (g_isotp_driver && g_isotp_driver->deinit)
+    {
+        g_isotp_driver->deinit();
+    }
+
+    g_isotp_driver = NULL;
+    g_isotp_initialized = 0;
+
+    return ISOTP_RET_OK;
+}
+
+int isotp_send(isotp_handle_t *handle, const uint8_t payload[], uint16_t size)
 {
     return isotp_send_with_id(handle, handle->send_arbitration_id, payload, size);
 }
 
-int isotp_send_with_id(isotp_handle_t* handle, uint32_t id, const uint8_t payload[], uint16_t size)
+int isotp_send_with_id(isotp_handle_t *handle, uint32_t id, const uint8_t payload[], uint16_t size)
 {
     int ret;
 
-    if (handle == 0x0)
+    if (handle == NULL)
     {
-        isotp_user_debug("handle is null!");
+        return ISOTP_RET_ERROR;
+    }
+
+    if (payload == NULL || size == 0)
+    {
         return ISOTP_RET_ERROR;
     }
 
     if (size > handle->send_buf_size)
     {
-        isotp_user_debug("Message size too large. Increase ISO_TP_MAX_MESSAGE_SIZE to set a larger buffer\n");
-        char message[128];
-        sprintf(&message[0], "Attempted to send %d bytes; max size is %d!\n", size, handle->send_buf_size);
+        isotp_debug("Message size too large for send buffer.");
         return ISOTP_RET_OVERFLOW;
     }
 
     if (ISOTP_SEND_STATUS_INPROGRESS == handle->send_status)
     {
-        isotp_user_debug("Abort previous message, transmission in progress.\n");
+        isotp_debug("Abort previous message, transmission in progress.");
         return ISOTP_RET_INPROGRESS;
     }
 
@@ -323,8 +416,8 @@ int isotp_send_with_id(isotp_handle_t* handle, uint32_t id, const uint8_t payloa
             handle->send_bs_remain = 0;
             handle->send_st_min = 0;
             handle->send_wtf_count = 0;
-            handle->send_timer_st = isotp_user_get_ms();
-            handle->send_timer_bs = isotp_user_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+            handle->send_timer_st = g_isotp_driver->get_ms();
+            handle->send_timer_bs = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
             handle->send_protocol_result = ISOTP_PROTOCOL_RESULT_OK;
             handle->send_status = ISOTP_SEND_STATUS_INPROGRESS;
         }
@@ -333,10 +426,15 @@ int isotp_send_with_id(isotp_handle_t* handle, uint32_t id, const uint8_t payloa
     return ret;
 }
 
-void isotp_on_can_message(isotp_handle_t* handle, uint8_t* data, uint8_t len)
+void isotp_on_can_message(isotp_handle_t *handle, uint8_t *data, uint8_t len)
 {
     isotp_can_message_t message;
     int ret;
+
+    if (handle == NULL || data == NULL)
+    {
+        return;
+    }
 
     if (len < 2 || len > 8)
     {
@@ -405,8 +503,8 @@ void isotp_on_can_message(isotp_handle_t* handle, uint8_t* data, uint8_t len)
                 /* send fc frame */
                 handle->receive_bs_count = ISO_TP_DEFAULT_BLOCK_SIZE;
                 isotp_send_flow_control(handle, PCI_FLOW_STATUS_CONTINUE, handle->receive_bs_count, ISO_TP_DEFAULT_ST_MIN);
-                /* refresh timer cs */
-                handle->receive_timer_cr = isotp_user_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                /* refresh timer cr */
+                handle->receive_timer_cr = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
             }
 
             break;
@@ -434,8 +532,8 @@ void isotp_on_can_message(isotp_handle_t* handle, uint8_t* data, uint8_t len)
             /* if success */
             if (ISOTP_RET_OK == ret)
             {
-                /* refresh timer cs */
-                handle->receive_timer_cr = isotp_user_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                /* refresh timer cr */
+                handle->receive_timer_cr = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
 
                 /* receive finished */
                 if (handle->receive_offset >= handle->receive_size)
@@ -456,7 +554,7 @@ void isotp_on_can_message(isotp_handle_t* handle, uint8_t* data, uint8_t len)
             break;
         }
         case ISOTP_PCI_TYPE_FLOW_CONTROL_FRAME:
-            /* handle fc frame only when sending in progress  */
+            /* handle fc frame only when sending in progress */
             if (ISOTP_SEND_STATUS_INPROGRESS != handle->send_status)
             {
                 break;
@@ -468,7 +566,7 @@ void isotp_on_can_message(isotp_handle_t* handle, uint8_t* data, uint8_t len)
             if (ISOTP_RET_OK == ret)
             {
                 /* refresh bs timer */
-                handle->send_timer_bs = isotp_user_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                handle->send_timer_bs = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
 
                 /* overflow */
                 if (PCI_FLOW_STATUS_OVERFLOW == message.as.flow_control.fs)
@@ -508,13 +606,16 @@ void isotp_on_can_message(isotp_handle_t* handle, uint8_t* data, uint8_t len)
         default:
             break;
     };
-
-    return;
 }
 
-int isotp_receive(isotp_handle_t* handle, uint8_t* payload, const uint16_t payload_size, uint16_t* out_size)
+int isotp_receive(isotp_handle_t *handle, uint8_t *payload, const uint16_t payload_size, uint16_t *out_size)
 {
     uint16_t copylen;
+
+    if (handle == NULL || payload == NULL || out_size == NULL)
+    {
+        return ISOTP_RET_ERROR;
+    }
 
     if (ISOTP_RECEIVE_STATUS_FULL != handle->receive_status)
     {
@@ -532,36 +633,49 @@ int isotp_receive(isotp_handle_t* handle, uint8_t* payload, const uint16_t paylo
 
     handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
 
+    if (handle->receive_size > payload_size)
+    {
+        return ISOTP_RET_OVERFLOW;
+    }
+
     return ISOTP_RET_OK;
 }
 
-void isotp_init_handle(isotp_handle_t* handle, uint32_t sendid, uint8_t* sendbuf, uint16_t sendbufsize, uint8_t* recvbuf,
-                       uint16_t recvbufsize)
+void isotp_init_link(isotp_handle_t *handle, uint32_t sendid, uint32_t recvid,
+                     uint8_t *sendbuf, uint16_t sendbufsize,
+                     uint8_t *recvbuf, uint16_t recvbufsize)
 {
     memset(handle, 0, sizeof(*handle));
     handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
     handle->send_status = ISOTP_SEND_STATUS_IDLE;
     handle->send_arbitration_id = sendid;
+    handle->receive_arbitration_id = recvid;
     handle->send_buffer = sendbuf;
     handle->send_buf_size = sendbufsize;
     handle->receive_buffer = recvbuf;
     handle->receive_buf_size = recvbufsize;
-
-    return;
 }
 
-void isotp_poll(isotp_handle_t* handle)
+void isotp_poll(isotp_handle_t *handle)
 {
     int ret;
-    // 发送剩余的连续帧数据
-    /* only polling when operation in progress */
+    uint32_t now;
+
+    if (handle == NULL || !g_isotp_initialized)
+    {
+        return;
+    }
+
+    now = g_isotp_driver->get_ms();
+
+    /* send remaining consecutive frames */
     if (ISOTP_SEND_STATUS_INPROGRESS == handle->send_status)
     {
         /* continue send data */
         if (/* send data if bs_remain is invalid or bs_remain large than zero */
             (ISOTP_INVALID_BS == handle->send_bs_remain || handle->send_bs_remain > 0) &&
             /* and if st_min is zero or go beyond interval time */
-            (0 == handle->send_st_min || (0 != handle->send_st_min && IsoTpTimeAfter(isotp_user_get_ms(), handle->send_timer_st))))
+            (0 == handle->send_st_min || (0 != handle->send_st_min && IsoTpTimeAfter(now, handle->send_timer_st))))
         {
             ret = isotp_send_consecutive_frame(handle);
             if (ISOTP_RET_OK == ret)
@@ -570,8 +684,8 @@ void isotp_poll(isotp_handle_t* handle)
                 {
                     handle->send_bs_remain -= 1;
                 }
-                handle->send_timer_bs = isotp_user_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
-                handle->send_timer_st = isotp_user_get_ms() + handle->send_st_min;
+                handle->send_timer_bs = now + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                handle->send_timer_st = now + handle->send_st_min;
 
                 /* check if send finish */
                 if (handle->send_offset >= handle->send_size)
@@ -586,35 +700,22 @@ void isotp_poll(isotp_handle_t* handle)
         }
 
         /* check timeout */
-        if (IsoTpTimeAfter(isotp_user_get_ms(), handle->send_timer_bs))
+        if (ISOTP_SEND_STATUS_INPROGRESS == handle->send_status &&
+            IsoTpTimeAfter(now, handle->send_timer_bs))
         {
             handle->send_protocol_result = ISOTP_PROTOCOL_RESULT_TIMEOUT_BS;
             handle->send_status = ISOTP_SEND_STATUS_ERROR;
         }
     }
 
-    // 接收剩余的连续帧的超时处理
-    /* only polling when operation in progress */
+    /* receive remaining consecutive frames timeout handling */
     if (ISOTP_RECEIVE_STATUS_INPROGRESS == handle->receive_status)
     {
         /* check timeout */
-        if (IsoTpTimeAfter(isotp_user_get_ms(), handle->receive_timer_cr))
+        if (IsoTpTimeAfter(now, handle->receive_timer_cr))
         {
             handle->receive_protocol_result = ISOTP_PROTOCOL_RESULT_TIMEOUT_CR;
             handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
         }
-    }
-
-    return;
-}
-
-void iso_process(isotp_handle_t* handle)
-{
-    if (1)
-    {
-    }
-
-    if (1)
-    {
     }
 }

@@ -19,8 +19,9 @@ extern "C" {
 /*								Typedefs									*/
 /****************************************************************************/
 
-typedef struct uds_can_driver {
-    int      (*init)(void *config);
+typedef struct uds_can_driver
+{
+    int      (*init)(void);
     int      (*send)(uint32_t id, const uint8_t *data, uint8_t len);
     int      (*deinit)(void);
     uint32_t (*get_ms)(void);
@@ -28,14 +29,14 @@ typedef struct uds_can_driver {
 } uds_can_driver_t;
 
 /****************************************************************************/
-/*						Exproted Variables								*/
+/*						Exported Variables								*/
 /****************************************************************************/
 
 /****************************************************************************/
-/*						Exproted Functions								*/
+/*						Exported Functions								*/
 /****************************************************************************/
 
-int  uds_init(const uds_can_driver_t *driver, void *port_cfg);
+int  uds_init(const uds_can_driver_t *driver);
 int  uds_deinit(void);
 void uds_poll(void);
 void uds_on_can_frame(uint32_t id, const uint8_t *data, uint8_t len);

@@ -1,5 +1,5 @@
-#ifndef __ISOTP_TYPES__
-#define __ISOTP_TYPES__
+#ifndef __ISOTP_DEFINES_H_
+#define __ISOTP_DEFINES_H_
 
 #include <stdint.h>
 /**************************************************************
@@ -15,21 +15,6 @@
 #endif
 
 /**************************************************************
- * OS specific defines
- *************************************************************/
-#ifdef _WIN32
-#define snprintf _snprintf
-#endif
-
-#ifdef _WIN32
-#define ISOTP_BYTE_ORDER_LITTLE_ENDIAN
-#define __builtin_bswap8 _byteswap_uint8
-#define __builtin_bswap16 _byteswap_uint16
-#define __builtin_bswap32 _byteswap_uint32
-#define __builtin_bswap64 _byteswap_uint64
-#endif
-
-/**************************************************************
  * internal used defines
  *************************************************************/
 #define ISOTP_RET_OK 0
@@ -42,7 +27,7 @@
 #define ISOTP_RET_LENGTH -7
 
 /* return logic true if 'a' is after 'b' */
-#define IsoTpTimeAfter(a, b) ((int32_t)((int32_t)(b) - (int32_t)(a)) < 0)
+#define IsoTpTimeAfter(a, b) ((int32_t)((uint32_t)(b) - (uint32_t)(a)) < 0)
 
 /*  invalid bs */
 #define ISOTP_INVALID_BS 0xFFFF
@@ -63,7 +48,7 @@ typedef enum
     ISOTP_RECEIVE_STATUS_FULL,
 } isotp_receive_status_t;
 
-/* can fram defination */
+/* can frame definition */
 #if defined(ISOTP_BYTE_ORDER_LITTLE_ENDIAN)
 typedef struct
 {
@@ -226,7 +211,7 @@ typedef enum
     PCI_FLOW_STATUS_OVERFLOW = 0x2
 } isotp_flow_status_t;
 
-/* Private: network layer resault code.
+/* Private: network layer result code.
  */
 #define ISOTP_PROTOCOL_RESULT_OK 0
 #define ISOTP_PROTOCOL_RESULT_TIMEOUT_A -1
