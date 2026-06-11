@@ -94,7 +94,7 @@ int at_parser_recv_data(const uint8_t *data, uint32_t len)
 				/* ② 结束语判断 */
 				if (at_transaction_end_marker_check(g_line_buf))
 				{
-
+					__nop();  //占位，实际应用中可在此处添加日志输出
 				}
 				else
 				{

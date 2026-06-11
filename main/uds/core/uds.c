@@ -20,10 +20,6 @@
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
 
-static int      uds_isotp_send(uint32_t id, const uint8_t *data, uint8_t len);
-static uint32_t uds_isotp_get_ms(void);
-static void     uds_isotp_debug(const char *message, ...);
-
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
@@ -33,7 +29,6 @@ static uint8_t g_recv_buf[4096];
 static const uds_can_driver_t *g_driver;
 static uint8_t                 g_initialized;
 static isotp_handle_t          g_isotp;
-static isotp_port_driver_t     g_isotp_port;
 
 /****************************************************************************/
 /*							Exported Functions    						    */
@@ -59,11 +54,7 @@ int uds_init(const uds_can_driver_t *driver)
         return -2;
     }
 
-    g_isotp_port.send   = uds_isotp_send;
-    g_isotp_port.get_ms = uds_isotp_get_ms;
-    g_isotp_port.debug  = uds_isotp_debug;
-
-    if (isotp_init(&g_isotp_port) != ISOTP_RET_OK)
+    if (isotp_init() != ISOTP_RET_OK)
     {
         if (g_driver->deinit)
         {
@@ -73,7 +64,7 @@ int uds_init(const uds_can_driver_t *driver)
         return -3;
     }
 
-    isotp_init_link(&g_isotp, 0x7E0, 0x7E8,
+    isotp_init_handle(&g_isotp, 0x7E8, 0x7E0,
                     g_send_buf, sizeof(g_send_buf),
                     g_recv_buf, sizeof(g_recv_buf));
 
@@ -115,40 +106,7 @@ void uds_on_can_frame(uint32_t id, const uint8_t *data, uint8_t len)
     {
         return;
     }
-    isotp_on_can_message(&g_isotp, (uint8_t *)data, len);
-}
-
-/****************************************************************************/
-/*							Static Functions    						    */
-/****************************************************************************/
-
-static int uds_isotp_send(uint32_t id, const uint8_t *data, uint8_t len)
-{
-    if (g_driver && g_driver->send)
-    {
-        return g_driver->send(id, data, len) == 0 ? 0 : -1;
-    }
-    return -1;
-}
-
-static uint32_t uds_isotp_get_ms(void)
-{
-    if (g_driver && g_driver->get_ms)
-    {
-        return g_driver->get_ms();
-    }
-    return 0;
-}
-
-static void uds_isotp_debug(const char *message, ...)
-{
-    if (g_driver && g_driver->debug)
-    {
-        va_list args;
-        va_start(args, message);
-        g_driver->debug(message, args);
-        va_end(args);
-    }
+    isotp_feed(&g_isotp, id, (uint8_t *)data, len);
 }
 
 /****************************************************************************/
