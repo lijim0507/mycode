@@ -19,6 +19,7 @@ typedef struct isotp_port_driver
 {
     int      (*init)(void);
     int      (*send)(uint32_t id, const uint8_t *data, uint8_t len);
+    int      (*receive)(uint32_t *id, uint8_t *data, uint8_t *len);
     int      (*deinit)(void);
     uint32_t (*get_ms)(void);
     void     (*debug)(const char *message, ...);
@@ -68,6 +69,7 @@ typedef struct
 /****************************************************************************/
 
 int  isotp_init(void);
+int  isotp_init_with_driver(const isotp_port_driver_t *driver);
 int  isotp_deinit(void);
 
 void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
@@ -76,8 +78,6 @@ void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
 
 void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len);
 void isotp_poll(isotp_handle_t *handle);
-
-uint8_t isotp_is_receive_id(isotp_handle_t *handle, uint32_t id);
 
 int  isotp_send(isotp_handle_t *handle, const uint8_t payload[], uint16_t size);
 int  isotp_send_with_id(isotp_handle_t *handle, uint32_t id, const uint8_t payload[], uint16_t size);

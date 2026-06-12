@@ -80,7 +80,7 @@ static uint8_t isotp_st_min_to_ms(uint8_t st_min)
     }
     else
     {
-        ms = 0;
+        ms = 127;
     }
 
     return ms;
@@ -105,9 +105,9 @@ static int isotp_send_flow_control(isotp_handle_t *handle, uint8_t flow_status, 
     /* send message */
 #ifdef ISO_TP_FRAME_PADDING
     (void)memset(message.as.flow_control.reserve, 0, sizeof(message.as.flow_control.reserve));
-    ret = g_isotp_driver->send(handle->receive_arbitration_id, message.as.data_array.ptr, sizeof(message));
+    ret = g_isotp_driver->send(handle->send_arbitration_id, message.as.data_array.ptr, sizeof(message));
 #else
-    ret = g_isotp_driver->send(handle->receive_arbitration_id, message.as.data_array.ptr, 3);
+    ret = g_isotp_driver->send(handle->send_arbitration_id, message.as.data_array.ptr, 3);
 #endif
 
     return ret;
@@ -497,25 +497,56 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
     };
 }
 
+void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
+{
+    if (handle == NULL || data == NULL)
+    {
+        return;
+    }
+
+    if (handle->receive_arbitration_id != id)
+    {
+        return;
+    }
+
+    isotp_rx_process(handle, data, len);
+
+    /* In callback mode: auto-notify when message is fully assembled */
+    if (handle->recv_cb && ISOTP_RECEIVE_STATUS_FULL == handle->receive_status)
+    {
+        handle->recv_cb(handle->receive_buffer, handle->receive_size);
+        handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
+    }
+}
+
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
 
 int isotp_init(void)
 {
-    g_isotp_driver = isotp_port_get_driver();
+    const isotp_port_driver_t *driver = isotp_port_get_driver();
+    return isotp_init_with_driver(driver);
+}
 
-    if (!g_isotp_driver || !g_isotp_driver->send || !g_isotp_driver->get_ms)
+int isotp_init_with_driver(const isotp_port_driver_t *driver)
+{
+    if (!driver || !driver->send || !driver->get_ms)
     {
-        g_isotp_driver = NULL;
         return ISOTP_RET_ERROR;
     }
 
-    if (g_isotp_driver->init && g_isotp_driver->init() != 0)
+    if (g_isotp_driver)
     {
-        g_isotp_driver = NULL;
+        isotp_deinit();
+    }
+
+    if (driver->init && driver->init() != 0)
+    {
         return ISOTP_RET_ERROR;
     }
+
+    g_isotp_driver = driver;
 
     return ISOTP_RET_OK;
 }
@@ -547,10 +578,7 @@ void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
     handle->receive_buf_size = recvbufsize;
 }
 
-uint8_t isotp_is_receive_id(isotp_handle_t *handle, uint32_t id)
-{
-    return (handle->receive_arbitration_id == id) ? 1 : 0;
-}
+
 
 int isotp_send(isotp_handle_t *handle, const uint8_t payload[], uint16_t size)
 {
@@ -647,33 +675,15 @@ int isotp_read(isotp_handle_t *handle, uint8_t *payload, const uint16_t payload_
     return ISOTP_RET_OK;
 }
 
-void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
-{
-    if (handle == NULL || data == NULL)
-    {
-        return;
-    }
-
-    if (!isotp_is_receive_id(handle, id))
-    {
-        return;
-    }
-
-    isotp_rx_process(handle, data, len);
-
-    /* In callback mode: auto-notify when message is fully assembled */
-    if (handle->recv_cb && ISOTP_RECEIVE_STATUS_FULL == handle->receive_status)
-    {
-        handle->recv_cb(handle->receive_buffer, handle->receive_size);
-        handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
-    }
-}
 
 
 void isotp_poll(isotp_handle_t *handle)
 {
     int ret;
     uint32_t now;
+    uint32_t id;
+    uint8_t data[8];
+    uint8_t len;
 
     if (handle == NULL || !g_isotp_driver)
     {
@@ -681,6 +691,15 @@ void isotp_poll(isotp_handle_t *handle)
     }
 
     now = g_isotp_driver->get_ms();
+
+    /* pull all available CAN frames from port driver */
+    if (g_isotp_driver->receive)
+    {
+        while (g_isotp_driver->receive(&id, data, &len))
+        {
+            isotp_feed(handle, id, data, len);
+        }
+    }
 
     /* send remaining consecutive frames */
     if (ISOTP_SEND_STATUS_INPROGRESS == handle->send_status)
