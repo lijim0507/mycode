@@ -80,7 +80,7 @@ static uint8_t isotp_st_min_to_ms(uint8_t st_min)
     }
     else
     {
-        ms = 127;
+        ms = 0;
     }
 
     return ms;
@@ -199,9 +199,9 @@ static int isotp_send_consecutive_frame(isotp_handle_t *handle)
     /* send message */
 #ifdef ISO_TP_FRAME_PADDING
     (void)memset(message.as.consecutive_frame.data + data_length, 0, sizeof(message.as.consecutive_frame.data) - data_length);
-    ret = g_isotp_driver->send(handle->send_arbitration_id, message.as.data_array.ptr, sizeof(message));
+    ret = g_isotp_driver->send(handle->send_current_id, message.as.data_array.ptr, sizeof(message));
 #else
-    ret = g_isotp_driver->send(handle->send_arbitration_id, message.as.data_array.ptr, data_length + 1);
+    ret = g_isotp_driver->send(handle->send_current_id, message.as.data_array.ptr, data_length + 1);
 #endif
     if (ISOTP_RET_OK == ret)
     {
@@ -390,8 +390,8 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
                 /* change status */
                 handle->receive_status = ISOTP_RECEIVE_STATUS_INPROGRESS;
                 /* send fc frame */
-                handle->receive_bs_count = ISO_TP_DEFAULT_BLOCK_SIZE;
-                isotp_send_flow_control(handle, PCI_FLOW_STATUS_CONTINUE, handle->receive_bs_count, ISO_TP_DEFAULT_ST_MIN);
+                handle->receive_bs_count = handle->receive_block_size;
+                isotp_send_flow_control(handle, PCI_FLOW_STATUS_CONTINUE, handle->receive_bs_count, handle->receive_st_min);
                 /* refresh timer cr */
                 handle->receive_timer_cr = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
             }
@@ -432,10 +432,10 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
                 else
                 {
                     /* send fc when bs reaches limit */
-                    if (0 == --handle->receive_bs_count)
+                    if (handle->receive_block_size > 0 && 0 == --handle->receive_bs_count)
                     {
-                        handle->receive_bs_count = ISO_TP_DEFAULT_BLOCK_SIZE;
-                        isotp_send_flow_control(handle, PCI_FLOW_STATUS_CONTINUE, handle->receive_bs_count, ISO_TP_DEFAULT_ST_MIN);
+                        handle->receive_bs_count = handle->receive_block_size;
+                        isotp_send_flow_control(handle, PCI_FLOW_STATUS_CONTINUE, handle->receive_bs_count, handle->receive_st_min);
                     }
                 }
             }
@@ -565,26 +565,47 @@ int isotp_deinit(void)
 
 void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
                      uint8_t *sendbuf, uint16_t sendbufsize,
-                     uint8_t *recvbuf, uint16_t recvbufsize)
+                     uint8_t *recvbuf, uint16_t recvbufsize,
+                     isotp_recv_cb_t cb)
 {
     memset(handle, 0, sizeof(*handle));
     handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
     handle->send_status = ISOTP_SEND_STATUS_IDLE;
     handle->send_arbitration_id = sendid;
+    handle->send_current_id = sendid;
     handle->receive_arbitration_id = recvid;
     handle->send_buffer = sendbuf;
     handle->send_buf_size = sendbufsize;
     handle->receive_buffer = recvbuf;
     handle->receive_buf_size = recvbufsize;
+    handle->receive_block_size = ISO_TP_DEFAULT_BLOCK_SIZE;
+    handle->receive_st_min = ISO_TP_DEFAULT_ST_MIN;
+    handle->recv_cb = cb;
 }
 
 
-
+/**
+ * @brief 发送 ISO-TP message 使用句柄中默认的id，消息内容和长度由参数指定
+ * 
+ * @param handle 
+ * @param payload 
+ * @param size 
+ * @return int 
+ */
 int isotp_send(isotp_handle_t *handle, const uint8_t payload[], uint16_t size)
 {
     return isotp_send_with_id(handle, handle->send_arbitration_id, payload, size);
 }
 
+/**
+ * @brief 使用指定 CAN ID 发送 ISO-TP 消息，若当前有发送正在进行则返回 ISOTP_RET_INPROGRESS
+ * 
+ * @param handle 
+ * @param id 
+ * @param payload 
+ * @param size 
+ * @return int 
+ */
 int isotp_send_with_id(isotp_handle_t *handle, uint32_t id, const uint8_t payload[], uint16_t size)
 {
     int ret;
@@ -614,6 +635,7 @@ int isotp_send_with_id(isotp_handle_t *handle, uint32_t id, const uint8_t payloa
     /* copy into local buffer */
     handle->send_size = size;
     handle->send_offset = 0;
+    handle->send_current_id = id;
     (void)memcpy(handle->send_buffer, payload, size);
 
     if (handle->send_size < 8)
@@ -642,6 +664,15 @@ int isotp_send_with_id(isotp_handle_t *handle, uint32_t id, const uint8_t payloa
     return ret;
 }
 
+/**
+ * @brief 读取 ISO-TP message 
+ * 
+ * @param handle 
+ * @param payload 
+ * @param payload_size 
+ * @param out_size 
+ * @return int 
+ */
 int isotp_read(isotp_handle_t *handle, uint8_t *payload, const uint16_t payload_size, uint16_t *out_size)
 {
     uint16_t copylen;
@@ -692,7 +723,7 @@ void isotp_poll(isotp_handle_t *handle)
 
     now = g_isotp_driver->get_ms();
 
-    /* pull all available CAN frames from port driver */
+    /* 接收处理 */
     if (g_isotp_driver->receive)
     {
         while (g_isotp_driver->receive(&id, data, &len))
@@ -701,7 +732,19 @@ void isotp_poll(isotp_handle_t *handle)
         }
     }
 
-    /* send remaining consecutive frames */
+    /* receive remaining consecutive frames timeout handling */
+    if (ISOTP_RECEIVE_STATUS_INPROGRESS == handle->receive_status)
+    {
+        /* check timeout */
+        if (IsoTpTimeAfter(now, handle->receive_timer_cr))
+        {
+            handle->receive_protocol_result = ISOTP_PROTOCOL_RESULT_TIMEOUT_CR;
+            handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
+        }
+    }
+
+
+    /* 发送处理 */
     if (ISOTP_SEND_STATUS_INPROGRESS == handle->send_status)
     {
         /* continue send data */
@@ -741,23 +784,5 @@ void isotp_poll(isotp_handle_t *handle)
         }
     }
 
-    /* receive remaining consecutive frames timeout handling */
-    if (ISOTP_RECEIVE_STATUS_INPROGRESS == handle->receive_status)
-    {
-        /* check timeout */
-        if (IsoTpTimeAfter(now, handle->receive_timer_cr))
-        {
-            handle->receive_protocol_result = ISOTP_PROTOCOL_RESULT_TIMEOUT_CR;
-            handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
-        }
-    }
 }
 
-void isotp_register_recv_cb(isotp_handle_t *handle, isotp_recv_cb_t cb)
-{
-    if (handle == NULL)
-    {
-        return;
-    }
-    handle->recv_cb = cb;
-}
