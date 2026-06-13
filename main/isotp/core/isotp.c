@@ -39,10 +39,16 @@ static void isotp_debug(const char *message);
 /*							Global Variables								*/
 /****************************************************************************/
 static const isotp_port_driver_t *g_isotp_driver;
-
+static uint8_t        g_isotp_send_buf[ISOTP_BUF_SIZE];
+static uint8_t        g_isotp_recv_buf[ISOTP_BUF_SIZE];
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
+/**
+ * @brief 输出调试信息，通过 port 层 debug 接口发送
+ *
+ * @param message 调试字符串
+ */
 static void isotp_debug(const char *message)
 {
     if (g_isotp_driver && g_isotp_driver->debug)
@@ -51,7 +57,12 @@ static void isotp_debug(const char *message)
     }
 }
 
-/* st_min unit: millisecond, to STmin format */
+/**
+ * @brief 将毫秒值转换为 ISO-TP STmin 字段格式
+ *
+ * @param ms 毫秒间隔，范围 0~127
+ * @return uint8_t STmin 编码值，超过 0x7F 钳位到 0x7F
+ */
 static uint8_t isotp_ms_to_st_min(uint8_t ms)
 {
     uint8_t st_min;
@@ -65,7 +76,12 @@ static uint8_t isotp_ms_to_st_min(uint8_t ms)
     return st_min;
 }
 
-/* STmin format to millisecond */
+/**
+ * @brief 将 ISO-TP STmin 字段格式转换为毫秒值
+ *
+ * @param st_min STmin 编码值
+ * @return uint8_t 毫秒间隔，0xF1~0xF9 映射为 1ms，0x00~0x7F 直接映射，保留值映射为 0ms
+ */
 static uint8_t isotp_st_min_to_ms(uint8_t st_min)
 {
     uint8_t ms;
@@ -86,6 +102,15 @@ static uint8_t isotp_st_min_to_ms(uint8_t st_min)
     return ms;
 }
 
+/**
+ * @brief 构造并发送流控帧 (FC)
+ *
+ * @param handle ISO-TP 句柄
+ * @param flow_status 流控状态 (Continue/Wait/Overflow)
+ * @param block_size 块大小 (BS)
+ * @param st_min_ms 最小间隔时间，单位毫秒
+ * @return int 发送结果，ISOTP_RET_OK 或 ISOTP_RET_ERROR
+ */
 static int isotp_send_flow_control(isotp_handle_t *handle, uint8_t flow_status, uint8_t block_size, uint8_t st_min_ms)
 {
     isotp_can_message_t message;
@@ -113,6 +138,13 @@ static int isotp_send_flow_control(isotp_handle_t *handle, uint8_t flow_status, 
     return ret;
 }
 
+/**
+ * @brief 构造并发送单帧 (SF)
+ *
+ * @param handle ISO-TP 句柄
+ * @param id 目标 CAN ID
+ * @return int 发送结果，ISOTP_RET_OK 或 ISOTP_RET_ERROR
+ */
 static int isotp_send_single_frame(isotp_handle_t *handle, uint32_t id)
 {
     isotp_can_message_t message;
@@ -142,6 +174,13 @@ static int isotp_send_single_frame(isotp_handle_t *handle, uint32_t id)
     return ret;
 }
 
+/**
+ * @brief 构造并发送首帧 (FF)，发送后更新句柄偏移与序列号
+ *
+ * @param handle ISO-TP 句柄
+ * @param id 目标 CAN ID
+ * @return int 发送结果，ISOTP_RET_OK 或 ISOTP_RET_ERROR
+ */
 static int isotp_send_first_frame(isotp_handle_t *handle, uint32_t id)
 {
     isotp_can_message_t message;
@@ -172,6 +211,12 @@ static int isotp_send_first_frame(isotp_handle_t *handle, uint32_t id)
     return ret;
 }
 
+/**
+ * @brief 构造并发送连续帧 (CF)，使用句柄中 send_current_id
+ *
+ * @param handle ISO-TP 句柄
+ * @return int 发送结果，ISOTP_RET_OK 或 ISOTP_RET_ERROR
+ */
 static int isotp_send_consecutive_frame(isotp_handle_t *handle)
 {
     isotp_can_message_t message;
@@ -215,6 +260,14 @@ static int isotp_send_consecutive_frame(isotp_handle_t *handle)
     return ret;
 }
 
+/**
+ * @brief 解析并处理接收到的单帧 (SF)，将载荷拷贝到接收缓冲区
+ *
+ * @param handle ISO-TP 句柄
+ * @param message CAN 消息结构体指针
+ * @param len 原始 CAN 帧长度
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_LENGTH 长度异常，ISOTP_RET_OVERFLOW 缓冲区溢出
+ */
 static int isotp_receive_single_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     /* check data length */
@@ -238,6 +291,14 @@ static int isotp_receive_single_frame(isotp_handle_t *handle, isotp_can_message_
     return ISOTP_RET_OK;
 }
 
+/**
+ * @brief 解析首帧 (FF)，提取总长度并将前 6 字节载荷拷贝到接收缓冲区
+ *
+ * @param handle ISO-TP 句柄
+ * @param message CAN 消息结构体指针
+ * @param len 原始 CAN 帧长度
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_LENGTH 长度异常，ISOTP_RET_OVERFLOW 缓冲区溢出
+ */
 static int isotp_receive_first_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     uint16_t payload_length;
@@ -274,6 +335,14 @@ static int isotp_receive_first_frame(isotp_handle_t *handle, isotp_can_message_t
     return ISOTP_RET_OK;
 }
 
+/**
+ * @brief 解析连续帧 (CF)，校验序列号并将载荷追加到接收缓冲区
+ *
+ * @param handle ISO-TP 句柄
+ * @param message CAN 消息结构体指针
+ * @param len 原始 CAN 帧长度
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_WRONG_SN 序列号错误，ISOTP_RET_LENGTH 长度不足
+ */
 static int isotp_receive_consecutive_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     uint16_t remaining_bytes;
@@ -308,6 +377,14 @@ static int isotp_receive_consecutive_frame(isotp_handle_t *handle, isotp_can_mes
     return ISOTP_RET_OK;
 }
 
+/**
+ * @brief 解析流控帧 (FC)，仅校验最小长度
+ *
+ * @param handle ISO-TP 句柄
+ * @param message CAN 消息结构体指针
+ * @param len 原始 CAN 帧长度
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_LENGTH 长度不足
+ */
 static int isotp_receive_flow_control_frame(isotp_handle_t *handle, isotp_can_message_t *message, uint8_t len)
 {
     /* check message length */
@@ -320,6 +397,13 @@ static int isotp_receive_flow_control_frame(isotp_handle_t *handle, isotp_can_me
     return ISOTP_RET_OK;
 }
 
+/**
+ * @brief ISO-TP 接收状态机核心处理函数，根据 PCI 类型分发到对应帧处理函数
+ *
+ * @param handle ISO-TP 句柄
+ * @param data 原始 CAN 帧数据
+ * @param len 数据长度
+ */
 static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
 {
     isotp_can_message_t message;
@@ -497,7 +581,15 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
     };
 }
 
-void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
+/**
+ * @brief 将收到的 CAN 帧送入 ISO-TP 接收状态机处理，接收完成时触发回调
+ *
+ * @param handle ISO-TP 句柄
+ * @param id CAN 帧仲裁 ID
+ * @param data CAN 帧载荷数据
+ * @param len 数据长度
+ */
+static void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
 {
     if (handle == NULL || data == NULL)
     {
@@ -523,12 +615,23 @@ void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
 /*							Exported Functions    						    */
 /****************************************************************************/
 
+/**
+ * @brief 使用默认 port 驱动初始化 ISO-TP 模块
+ *
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
+ */
 int isotp_init(void)
 {
     const isotp_port_driver_t *driver = isotp_port_get_driver();
     return isotp_init_with_driver(driver);
 }
 
+/**
+ * @brief 使用指定 port 驱动初始化 ISO-TP 模块，若之前已初始化则先反初始化
+ *
+ * @param driver port 驱动指针，send 和 get_ms 不可为 NULL
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
+ */
 int isotp_init_with_driver(const isotp_port_driver_t *driver)
 {
     if (!driver || !driver->send || !driver->get_ms)
@@ -551,6 +654,11 @@ int isotp_init_with_driver(const isotp_port_driver_t *driver)
     return ISOTP_RET_OK;
 }
 
+/**
+ * @brief 反初始化 ISO-TP 模块，释放 port 层资源
+ *
+ * @return int ISOTP_RET_OK
+ */
 int isotp_deinit(void)
 {
     if (g_isotp_driver && g_isotp_driver->deinit)
@@ -563,10 +671,14 @@ int isotp_deinit(void)
     return ISOTP_RET_OK;
 }
 
-void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
-                     uint8_t *sendbuf, uint16_t sendbufsize,
-                     uint8_t *recvbuf, uint16_t recvbufsize,
-                     isotp_recv_cb_t cb)
+/**
+ * @brief 初始化 ISO-TP 句柄，设置收发 CAN ID 并分配内部缓冲区
+ *
+ * @param handle ISO-TP 句柄指针
+ * @param recvid 接收滤波 CAN 仲裁 ID
+ * @param sendid 默认发送 CAN 仲裁 ID
+ */
+void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid)
 {
     memset(handle, 0, sizeof(*handle));
     handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
@@ -574,15 +686,28 @@ void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
     handle->send_arbitration_id = sendid;
     handle->send_current_id = sendid;
     handle->receive_arbitration_id = recvid;
-    handle->send_buffer = sendbuf;
-    handle->send_buf_size = sendbufsize;
-    handle->receive_buffer = recvbuf;
-    handle->receive_buf_size = recvbufsize;
+    handle->send_buffer = g_isotp_send_buf;
+    handle->send_buf_size = ISOTP_BUF_SIZE;
+    handle->receive_buffer = g_isotp_recv_buf;
+    handle->receive_buf_size = ISOTP_BUF_SIZE;
     handle->receive_block_size = ISO_TP_DEFAULT_BLOCK_SIZE;
     handle->receive_st_min = ISO_TP_DEFAULT_ST_MIN;
-    handle->recv_cb = cb;
 }
 
+/**
+ * @brief 注册接收完成回调函数，设为 NULL 则切换为轮询模式
+ *
+ * @param handle ISO-TP 句柄指针
+ * @param cb 回调函数指针，接收完成时被调用
+ */
+void isotp_register_recv_cb(isotp_handle_t *handle, isotp_recv_cb_t cb)
+{
+    if (handle == NULL)
+    {
+        return;
+    }
+    handle->recv_cb = cb;
+}
 
 /**
  * @brief 发送 ISO-TP message 使用句柄中默认的id，消息内容和长度由参数指定
@@ -708,6 +833,11 @@ int isotp_read(isotp_handle_t *handle, uint8_t *payload, const uint16_t payload_
 
 
 
+/**
+ * @brief 轮询处理 ISO-TP 接收与发送状态机，需在主循环中周期调用
+ *
+ * @param handle ISO-TP 句柄指针
+ */
 void isotp_poll(isotp_handle_t *handle)
 {
     int ret;

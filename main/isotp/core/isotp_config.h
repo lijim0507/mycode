@@ -25,5 +25,7 @@
  */
 #define ISO_TP_FRAME_PADDING 1
 
+#define ISOTP_BUF_SIZE 1024
+
 #endif
 
