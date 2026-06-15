@@ -79,7 +79,7 @@ void ws2812_effect_rainbow(uint8_t speed, uint8_t brightness)
     uint32_t num_leds;
     uint32_t i;
     uint16_t hue;
-    uint8_t r, g, b;
+    ws281x_pixel_t r, g, b;
 
     num_leds = ws2812_get_num_leds();
     if (num_leds == 0)
@@ -87,7 +87,7 @@ void ws2812_effect_rainbow(uint8_t speed, uint8_t brightness)
         return;
     }
 
-    for (i = 0; i < num_leds; i++) 
+    for (i = 0; i < num_leds; i++)
     {
         hue = (uint16_t)(hue_offset + (i * 360U / num_leds));
         ws2812_hsv2rgb(hue % 360, 255, brightness, &r, &g, &b);
@@ -96,7 +96,7 @@ void ws2812_effect_rainbow(uint8_t speed, uint8_t brightness)
 
     hue_offset = (uint16_t)(hue_offset + speed);
 
-    if (hue_offset >= 360) 
+    if (hue_offset >= 360)
     {
         hue_offset -= 360;
     }

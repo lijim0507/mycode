@@ -85,7 +85,7 @@ typedef struct {
 static void delay_loop(volatile uint32_t count);
 static void send_byte(uint8_t byte);
 
-static int stm32_bitbang_init(void *config);
+static int stm32_bitbang_init(void);
 static int stm32_bitbang_transmit(const uint8_t *data, uint32_t len);
 static int stm32_bitbang_is_busy(void);
 static int stm32_bitbang_deinit(void);
@@ -139,7 +139,6 @@ static void send_byte(uint8_t byte)
 
 /**
  * @brief  STM32 位翻转硬件初始化
- * @param  config 未使用（GPIO 由宏定义指定）
  * @return 0: 成功
  * @note   根据当前 SystemCoreClock 自动缩放时序参数
  */
@@ -147,8 +146,6 @@ static int stm32_bitbang_init(void)
 {
     uint32_t sysclk;
     uint32_t scale;
-
-    (void)config;
 
     sysclk = WS2812_STM32_CLK_HZ;
 
@@ -199,7 +196,7 @@ static int stm32_bitbang_transmit(const uint8_t *data, uint32_t len)
         send_byte(data[i]);
     }
 
-    /* RESET: 保持低电平 > 50us */
+    /* RESET: 保持低电平 (WS2812B > 50us, WS2816A > 280us) */
     GPIO_OUT(0);
     delay_loop(g_stm32.reset);
 

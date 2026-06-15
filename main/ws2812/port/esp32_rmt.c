@@ -14,6 +14,10 @@
 /*								Macros										*/
 /****************************************************************************/
 
+#ifndef WS2812_ESP32_GPIO_NUM
+#define WS2812_ESP32_GPIO_NUM       GPIO_NUM_2
+#endif
+
 /* RMT 时钟分辨率：10MHz → 100ns/tick */
 #define WS2812_RMT_RESOLUTION_HZ  (10 * 1000 * 1000)
 
@@ -26,10 +30,21 @@
  *
  * 以上数值均在 WS2812B 规格范围内，实际使用示波器验证。
  */
-#define WS2812_T0H_TICKS  4
-#define WS2812_T0L_TICKS  8
-#define WS2812_T1H_TICKS  7
-#define WS2812_T1L_TICKS  6
+#ifndef WS2812_RMT_T0H_TICKS
+#define WS2812_RMT_T0H_TICKS  4
+#endif
+
+#ifndef WS2812_RMT_T0L_TICKS
+#define WS2812_RMT_T0L_TICKS  8
+#endif
+
+#ifndef WS2812_RMT_T1H_TICKS
+#define WS2812_RMT_T1H_TICKS  7
+#endif
+
+#ifndef WS2812_RMT_T1L_TICKS
+#define WS2812_RMT_T1L_TICKS  6
+#endif
 
 /*
  * RESET 信号：>50us 低电平。
@@ -45,11 +60,11 @@
  * @brief  ESP32 RMT 驱动上下文
  */
 typedef struct {
-    rmt_channel_handle_t   tx_channel;      /* RMT TX 通道句柄            */
-    rmt_encoder_handle_t   bytes_encoder;   /* 字节编码器句柄             */
-    gpio_num_t             gpio_num;        /* 数据引脚 GPIO 编号         */
-    SemaphoreHandle_t      tx_sem;          /* 发送完成信号量              */
-    bool                   busy;            /* 发送忙标志                  */
+    rmt_channel_handle_t   tx_channel;
+    rmt_encoder_handle_t   bytes_encoder;
+    gpio_num_t             gpio_num;
+    SemaphoreHandle_t      tx_sem;
+    bool                   busy;
 } esp32_rmt_ctx_t;
 
 /****************************************************************************/
@@ -60,7 +75,7 @@ static bool IRAM_ATTR rmt_tx_done_cb(rmt_channel_handle_t tx_chan,
                                       const rmt_tx_done_event_data_t *edata,
                                       void *user_ctx);
 
-static int esp32_rmt_init(void *config);
+static int esp32_rmt_init(void);
 static int esp32_rmt_transmit(const uint8_t *data, uint32_t len);
 static int esp32_rmt_is_busy(void);
 static int esp32_rmt_deinit(void);
@@ -97,23 +112,20 @@ static bool IRAM_ATTR rmt_tx_done_cb(rmt_channel_handle_t tx_chan,
 
 /**
  * @brief  ESP32 RMT 硬件初始化
- * @param  config 指向 gpio_num_t 的指针，传 NULL 使用默认 GPIO_NUM_2
  * @return 0: 成功, -1: 信号量创建失败, -2: RMT 通道创建失败,
  *         -3: 编码器创建失败, -4: RMT 使能失败
+ * @note   GPIO 通过 WS2812_ESP32_GPIO_NUM 宏定义指定
  */
-static int esp32_rmt_init(void *config)
+static int esp32_rmt_init(void)
 {
-    gpio_num_t gpio_num = GPIO_NUM_2; /* 默认引脚 */
-
-    if (config != NULL) {
-        gpio_num = *(gpio_num_t *)config;
-    }
+    gpio_num_t gpio_num = WS2812_ESP32_GPIO_NUM;
 
     g_rmt_ctx.gpio_num = gpio_num;
 
     /* 创建发送完成信号量 */
     g_rmt_ctx.tx_sem = xSemaphoreCreateBinary();
-    if (!g_rmt_ctx.tx_sem) {
+    if (!g_rmt_ctx.tx_sem)
+    {
         return -1;
     }
 
@@ -128,7 +140,8 @@ static int esp32_rmt_init(void *config)
     };
 
     esp_err_t ret = rmt_new_tx_channel(&tx_chan_cfg, &g_rmt_ctx.tx_channel);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         vSemaphoreDelete(g_rmt_ctx.tx_sem);
         return -2;
     }
@@ -142,21 +155,22 @@ static int esp32_rmt_init(void *config)
     /* 创建字节编码器：将字节数据映射为 WS2812 时序的 RMT 符号 */
     rmt_bytes_encoder_config_t bytes_enc_cfg = {
         .bit0 = {
-            .duration0 = WS2812_T0H_TICKS,
+            .duration0 = WS2812_RMT_T0H_TICKS,
             .level0    = 1,
-            .duration1 = WS2812_T0L_TICKS,
+            .duration1 = WS2812_RMT_T0L_TICKS,
             .level1    = 0,
         },
         .bit1 = {
-            .duration0 = WS2812_T1H_TICKS,
+            .duration0 = WS2812_RMT_T1H_TICKS,
             .level0    = 1,
-            .duration1 = WS2812_T1L_TICKS,
+            .duration1 = WS2812_RMT_T1L_TICKS,
             .level1    = 0,
         },
         .flags.msb_first = 1,
     };
     ret = rmt_new_bytes_encoder(&bytes_enc_cfg, &g_rmt_ctx.bytes_encoder);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         rmt_del_channel(g_rmt_ctx.tx_channel);
         vSemaphoreDelete(g_rmt_ctx.tx_sem);
         return -3;
@@ -164,7 +178,8 @@ static int esp32_rmt_init(void *config)
 
     /* 使能 RMT TX 通道 */
     ret = rmt_enable(g_rmt_ctx.tx_channel);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         rmt_del_encoder(g_rmt_ctx.bytes_encoder);
         rmt_del_channel(g_rmt_ctx.tx_channel);
         vSemaphoreDelete(g_rmt_ctx.tx_sem);
@@ -186,14 +201,15 @@ static int esp32_rmt_transmit(const uint8_t *data, uint32_t len)
 {
     rmt_transmit_config_t tx_cfg = {
         .loop_count = 0,
-        .flags.eot_level = 0, /* 传输结束后保持低电平 → RESET 信号 */
+        .flags.eot_level = 0,
     };
 
     g_rmt_ctx.busy = true;
     esp_err_t ret = rmt_transmit(g_rmt_ctx.tx_channel,
                                   g_rmt_ctx.bytes_encoder,
                                   data, len, &tx_cfg);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         g_rmt_ctx.busy = false;
         return -1;
     }
@@ -206,10 +222,10 @@ static int esp32_rmt_transmit(const uint8_t *data, uint32_t len)
  */
 static int esp32_rmt_is_busy(void)
 {
-    if (g_rmt_ctx.busy) {
-        /* 双重检查：若信号量已被 ISR 给出但 busy 标志尚未更新，
-         * 通过非阻塞获取信号量来确认完成状态 */
-        if (xSemaphoreTake(g_rmt_ctx.tx_sem, 0) == pdTRUE) {
+    if (g_rmt_ctx.busy)
+    {
+        if (xSemaphoreTake(g_rmt_ctx.tx_sem, 0) == pdTRUE)
+        {
             g_rmt_ctx.busy = false;
         }
     }
@@ -222,12 +238,14 @@ static int esp32_rmt_is_busy(void)
  */
 static int esp32_rmt_deinit(void)
 {
-    if (g_rmt_ctx.tx_channel) {
+    if (g_rmt_ctx.tx_channel)
+    {
         rmt_disable(g_rmt_ctx.tx_channel);
         rmt_del_encoder(g_rmt_ctx.bytes_encoder);
         rmt_del_channel(g_rmt_ctx.tx_channel);
     }
-    if (g_rmt_ctx.tx_sem) {
+    if (g_rmt_ctx.tx_sem)
+    {
         vSemaphoreDelete(g_rmt_ctx.tx_sem);
     }
     memset(&g_rmt_ctx, 0, sizeof(g_rmt_ctx));

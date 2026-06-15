@@ -1,10 +1,9 @@
-
-
 #ifndef __WS2812_H_
 #define __WS2812_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
+#include "ws2812_config.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -45,16 +44,30 @@ typedef enum {
     WS2812_COLOR_NUM
 } ws2812_color_t;
 
+#if WS281X_DEVICE == WS281X_DEV_WS2816A
+typedef uint16_t ws281x_pixel_t;
+#else
+typedef uint8_t  ws281x_pixel_t;
+#endif
+
+#if WS281X_HAS_GAIN
+typedef struct {
+    uint8_t gain_g;
+    uint8_t gain_r;
+    uint8_t gain_b;
+} ws281x_gain_t;
+#endif
+
 /**
  * @brief  WS2812 硬件驱动抽象接口
  * @note   上层 core 层不关心具体硬件实现，只通过此接口调用 port 层。
  *         每个平台只需实现这四个函数指针即可完成移植。
  */
 typedef struct ws2812_driver {
-    int (*init)(void);                      /* 硬件初始化           */
-    int (*transmit)(const uint8_t *data, uint32_t len); /* 发送已编码数据     */
-    int (*is_busy)(void);                           /* 查询发送是否完成     */
-    int (*deinit)(void);                            /* 反初始化             */
+    int (*init)(void);
+    int (*transmit)(const uint8_t *data, uint32_t len);
+    int (*is_busy)(void);
+    int (*deinit)(void);
 } ws2812_driver_t;
 
 /****************************************************************************/
@@ -68,9 +81,9 @@ typedef struct ws2812_driver {
 /**
  * @brief  初始化 WS2812 驱动库
  * @param  num_leds LED 灯珠数量
- * @return 0: 成功, -1: 参数错误, -2: 内存不足, -3: 硬件初始化失败
+ * @return 0: 成功, -1: 参数错误, -3: 硬件初始化失败
  */
-int ws2812_init(uint32_t num_leds);
+int  ws2812_init(uint32_t num_leds);
 
 /**
  * @brief  反初始化 WS2812 驱动库
@@ -81,19 +94,19 @@ int  ws2812_deinit(void);
 /**
  * @brief  设置单颗灯珠 RGB 颜色
  * @param  index 灯珠索引 (0 ~ num_leds-1)
- * @param  r     红色分量 (0~255)
- * @param  g     绿色分量 (0~255)
- * @param  b     蓝色分量 (0~255)
+ * @param  r     红色分量
+ * @param  g     绿色分量
+ * @param  b     蓝色分量
  */
-void ws2812_set_pixel(uint32_t index, uint8_t r, uint8_t g, uint8_t b);
+void ws2812_set_pixel(uint32_t index, ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b);
 
 /**
  * @brief  设置所有灯珠为同一 RGB 颜色
- * @param  r 红色分量 (0~255)
- * @param  g 绿色分量 (0~255)
- * @param  b 蓝色分量 (0~255)
+ * @param  r 红色分量
+ * @param  g 绿色分量
+ * @param  b 蓝色分量
  */
-void ws2812_set_all(uint8_t r, uint8_t g, uint8_t b);
+void ws2812_set_all(ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b);
 
 /**
  * @brief  使用预定义颜色枚举设置单颗灯珠
@@ -143,6 +156,16 @@ bool ws2812_show_async(void);
  */
 bool ws2812_is_busy(void);
 
+#if WS281X_HAS_GAIN
+/**
+ * @brief  设置全局增益（仅 WS2816A 等支持增益的设备有效）
+ * @param  gain_g 绿色增益 (5bit, 0~31)
+ * @param  gain_r 红色增益 (5bit, 0~31)
+ * @param  gain_b 蓝色增益 (5bit, 0~31)
+ */
+void ws2812_set_gain(uint8_t gain_g, uint8_t gain_r, uint8_t gain_b);
+#endif
+
 /****************************************************************************/
 /*                        Effect Functions                                  */
 /****************************************************************************/
@@ -190,7 +213,7 @@ void ws2812_effect_chase(uint8_t r, uint8_t g, uint8_t b, uint32_t speed_ms, uin
  * @param  b  输出蓝色分量
  */
 void ws2812_hsv2rgb(uint16_t h, uint8_t s, uint8_t v,
-                     uint8_t *r, uint8_t *g, uint8_t *b);
+                     ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_t *b);
 
 /**
  * @brief  根据预定义颜色枚举获取 RGB 值
@@ -200,7 +223,7 @@ void ws2812_hsv2rgb(uint16_t h, uint8_t s, uint8_t v,
  * @param  b     输出蓝色分量
  */
 void ws2812_color_get_rgb(ws2812_color_t color,
-                           uint8_t *r, uint8_t *g, uint8_t *b);
+                           ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_t *b);
 
 /**
  * @brief  将亮度缩放应用到 RGB 值
@@ -209,7 +232,21 @@ void ws2812_color_get_rgb(ws2812_color_t color,
  * @param  b          蓝色分量输入/输出
  * @param  brightness 亮度 (0~255)
  */
-void ws2812_apply_brightness(uint8_t *r, uint8_t *g, uint8_t *b, uint8_t brightness);
+void ws2812_apply_brightness(ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_t *b, uint8_t brightness);
+
+/**
+ * @brief  将 8bit 颜色值扩展为当前设备像素位宽
+ * @param  val 8bit 输入值
+ * @return WS2812: 原值; WS2816A: val * 257 (16bit 扩展)
+ */
+static inline ws281x_pixel_t ws281x_expand_8bit(uint8_t val)
+{
+#if WS281X_DEVICE == WS281X_DEV_WS2816A
+    return (ws281x_pixel_t)((uint16_t)val * 257U);
+#else
+    return (ws281x_pixel_t)val;
+#endif
+}
 
 #ifdef __cplusplus
 }

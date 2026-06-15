@@ -1,7 +1,7 @@
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-#include "drv_ws2812.h"
+#include "ws2812_port.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -84,12 +84,11 @@ extern TIM_HandleTypeDef htim4;
 
 
 /**
- * @brief  WS2812B 时序参数 (固定值，无需修改)
+ * @brief  WS2812B/WS2816A 时序参数 (固定值，无需修改)
  */
-#define WS2812_BIT_PERIOD_NS      1250U     /* 位周期 (1250 ns = 800kHz)   */
-#define WS2812_T0H_NS              350U     /* 0 码高电平时间 (ns)         */
-#define WS2812_T1H_NS              850U     /* 1 码高电平时间 (ns)         */
-#define WS2812_RESET_CYCLES         50U     /* RESET 脉冲所占 PWM 周期数   */
+#define WS2812_BIT_PERIOD_NS      1250U
+#define WS2812_T0H_NS              350U
+#define WS2812_T1H_NS              850U
 
 /****************************************************************************/
 /*								Typedefs									*/
@@ -124,7 +123,8 @@ static int stm32_timer_dma_deinit(void);
 /****************************************************************************/
 
 static stm32_timer_dma_ctx_t g_stm32;
-static uint16_t g_dma_buf[WS2812_STM32_NUM_LEDS * 24U + WS2812_RESET_CYCLES]; /* 预分配 DMA 缓冲区 */
+#define WS281X_DMA_BUF_WORDS  (WS2812_MAX_LEDS * WS281X_BITS_PER_LED + WS281X_FRAME_HEADER_BITS + WS281X_RESET_CYCLES)
+static uint16_t g_dma_buf[WS281X_DMA_BUF_WORDS];
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
@@ -162,7 +162,7 @@ static int stm32_timer_dma_init(void)
     g_stm32.htim        = WS2812_STM32_TIM_HANDLE;
     g_stm32.tim_channel = WS2812_STM32_TIM_CHANNEL;
 
-    g_stm32.buf_capacity = WS2812_STM32_NUM_LEDS * 24U + WS2812_RESET_CYCLES;
+    g_stm32.buf_capacity = WS2812_MAX_LEDS * WS281X_BITS_PER_LED + WS281X_FRAME_HEADER_BITS + WS281X_RESET_CYCLES;
     g_stm32.dma_buf = g_dma_buf;
 
     //-------------------------------------------------------

@@ -2,7 +2,7 @@
 /*								Includes									*/
 /****************************************************************************/
 #include "ws2812.h"
-#include "drv_ws2812.h"
+#include "ws2812_port.h"
 
 #include <string.h>
 
@@ -18,19 +18,23 @@
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
 
-static void ws2812_encode(const uint8_t *pixels, uint8_t *output, uint32_t num_leds);
+static void ws2812_encode(const ws281x_pixel_t *pixels, uint8_t *output, uint32_t num_leds);
 
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
 
 static const ws2812_driver_t *g_driver;
-static uint8_t   g_pixel_buf[WS2812_STM32_NUM_LEDS * 3];   /* 像素缓冲区：GRB GRB GRB ... */
-static uint8_t   g_encode_buf[WS2812_STM32_NUM_LEDS * 3];  /* 编码后发送缓冲区             */
-static uint32_t  g_num_leds;
-static uint8_t   g_brightness = 255;
-static bool      g_initialized;
-static uint32_t  g_encode_buf_len;
+static ws281x_pixel_t  g_pixel_buf[WS2812_MAX_LEDS * WS281X_CH_PER_LED];
+static uint8_t         g_encode_buf[WS2812_MAX_LEDS * WS281X_BYTES_PER_LED + WS281X_FRAME_HEADER_BYTES];
+static uint32_t        g_num_leds;
+static uint8_t         g_brightness = 255;
+static bool            g_initialized;
+static uint32_t        g_encode_buf_len;
+
+#if WS281X_HAS_GAIN
+static ws281x_gain_t   g_gain = {31, 31, 31};
+#endif
 
 /****************************************************************************/
 /*							Exported Functions    						    */
@@ -38,45 +42,35 @@ static uint32_t  g_encode_buf_len;
 
 /**
  * @brief  初始化 WS2812 驱动库
- * @param  driver   平台驱动指针
- * @param  port_cfg 平台相关配置，传 NULL 使用默认值
  * @param  num_leds LED 灯珠数量
- * @return 0: 成功, -1: 参数错误, -2: 内存不足, -3: 硬件初始化失败
+ * @return 0: 成功, -1: 参数错误, -3: 硬件初始化失败
  */
 int ws2812_init(uint32_t num_leds)
 {
-    if (num_leds == 0 || num_leds > WS2812_STM32_NUM_LEDS) 
+    if (num_leds == 0 || num_leds > WS2812_MAX_LEDS)
     {
         return -1;
     }
 
     g_driver = ws2812_port_get_driver();
-    if (!g_driver ) 
-    {
-        return -1;
-    }
-    if (!g_driver->init) 
-    {
-        return -1;
-    }
-    if (!g_driver->transmit) 
+    if (!g_driver || !g_driver->init || !g_driver->transmit)
     {
         return -1;
     }
 
-    if (g_initialized) 
+    if (g_initialized)
     {
         ws2812_deinit();
     }
 
     g_num_leds = num_leds;
     g_brightness = 255;
-    g_encode_buf_len = num_leds * 3;
+    g_encode_buf_len = num_leds * WS281X_BYTES_PER_LED + WS281X_FRAME_HEADER_BYTES;
 
     memset(g_pixel_buf, 0, sizeof(g_pixel_buf));
     memset(g_encode_buf, 0, sizeof(g_encode_buf));
 
-    if (g_driver->init() != 0) 
+    if (g_driver->init() != 0)
     {
         return -3;
     }
@@ -91,12 +85,12 @@ int ws2812_init(uint32_t num_leds)
  */
 int ws2812_deinit(void)
 {
-    if (!g_initialized) 
+    if (!g_initialized)
     {
         return 0;
     }
 
-    if (g_driver && g_driver->deinit) 
+    if (g_driver && g_driver->deinit)
     {
         g_driver->deinit();
     }
@@ -115,9 +109,9 @@ int ws2812_deinit(void)
  * @param  g     绿色分量
  * @param  b     蓝色分量
  */
-void ws2812_set_pixel(uint32_t index, uint8_t r, uint8_t g, uint8_t b)
+void ws2812_set_pixel(uint32_t index, ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b)
 {
-    if (!g_initialized || index >= g_num_leds) 
+    if (!g_initialized || index >= g_num_leds)
     {
         return;
     }
@@ -132,14 +126,14 @@ void ws2812_set_pixel(uint32_t index, uint8_t r, uint8_t g, uint8_t b)
  * @param  g 绿色分量
  * @param  b 蓝色分量
  */
-void ws2812_set_all(uint8_t r, uint8_t g, uint8_t b)
+void ws2812_set_all(ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b)
 {
-    if (!g_initialized) 
+    if (!g_initialized)
     {
         return;
     }
 
-    for (uint32_t i = 0; i < g_num_leds; i++) 
+    for (uint32_t i = 0; i < g_num_leds; i++)
     {
         g_pixel_buf[i * 3 + 0] = g;
         g_pixel_buf[i * 3 + 1] = r;
@@ -154,7 +148,7 @@ void ws2812_set_all(uint8_t r, uint8_t g, uint8_t b)
  */
 void ws2812_set_pixel_color(uint32_t index, ws2812_color_t color)
 {
-    uint8_t r, g, b;
+    ws281x_pixel_t r, g, b;
     ws2812_color_get_rgb(color, &r, &g, &b);
     ws2812_set_pixel(index, r, g, b);
 }
@@ -165,7 +159,7 @@ void ws2812_set_pixel_color(uint32_t index, ws2812_color_t color)
  */
 void ws2812_set_all_color(ws2812_color_t color)
 {
-    uint8_t r, g, b;
+    ws281x_pixel_t r, g, b;
     ws2812_color_get_rgb(color, &r, &g, &b);
     ws2812_set_all(r, g, b);
 }
@@ -202,16 +196,15 @@ void ws2812_clear(void)
  */
 void ws2812_show(void)
 {
-    if (!g_initialized || !g_driver) 
+    if (!g_initialized || !g_driver)
     {
         return;
     }
 
-    if (g_driver->is_busy && g_driver->is_busy()) 
+    if (g_driver->is_busy && g_driver->is_busy())
     {
-        while (g_driver->is_busy()) 
+        while (g_driver->is_busy())
         {
-            /* 忙等待直到上次传输完成 */
         }
     }
 
@@ -225,12 +218,12 @@ void ws2812_show(void)
  */
 bool ws2812_show_async(void)
 {
-    if (!g_initialized || !g_driver) 
+    if (!g_initialized || !g_driver)
     {
         return false;
     }
 
-    if (g_driver->is_busy && g_driver->is_busy()) 
+    if (g_driver->is_busy && g_driver->is_busy())
     {
         return false;
     }
@@ -253,6 +246,21 @@ bool ws2812_is_busy(void)
     return (g_driver->is_busy() != 0);
 }
 
+#if WS281X_HAS_GAIN
+/**
+ * @brief  设置全局增益（仅 WS2816A 等支持增益的设备有效）
+ * @param  gain_g 绿色增益 (5bit, 0~31)
+ * @param  gain_r 红色增益 (5bit, 0~31)
+ * @param  gain_b 蓝色增益 (5bit, 0~31)
+ */
+void ws2812_set_gain(uint8_t gain_g, uint8_t gain_r, uint8_t gain_b)
+{
+    g_gain.gain_g = gain_g & 0x1F;
+    g_gain.gain_r = gain_r & 0x1F;
+    g_gain.gain_b = gain_b & 0x1F;
+}
+#endif
+
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
@@ -262,20 +270,34 @@ bool ws2812_is_busy(void)
  * @param  pixels    原始像素缓冲区（GRB 格式）
  * @param  output    编码后输出缓冲区
  * @param  num_leds  LED 数量
- * @note   当前仅做亮度缩放，未来可扩展支持不同协议编码（如 APA102、SK6812）
  */
-static void ws2812_encode(const uint8_t *pixels, uint8_t *output, uint32_t num_leds)
+static void ws2812_encode(const ws281x_pixel_t *pixels, uint8_t *output, uint32_t num_leds)
 {
-    if (g_brightness == 255) 
+    uint32_t out_idx = 0;
+    uint32_t num_ch  = num_leds * WS281X_CH_PER_LED;
+
+#if WS281X_HAS_GAIN
+    uint16_t gain_word = ((uint16_t)(g_gain.gain_g & 0x1F) << 11)
+                       | ((uint16_t)(g_gain.gain_r & 0x1F) << 6)
+                       | ((uint16_t)(g_gain.gain_b & 0x1F) << 1)
+                       | 0U;
+    output[out_idx++] = (uint8_t)(gain_word >> 8);
+    output[out_idx++] = (uint8_t)(gain_word & 0xFF);
+#endif
+
+    for (uint32_t i = 0; i < num_ch; i++)
     {
-        memcpy(output, pixels, num_leds * 3);
-    } 
-    else
-    {
-        for (uint32_t i = 0; i < num_leds * 3; i++) 
+        ws281x_pixel_t val = pixels[i];
+        if (g_brightness != 255)
         {
-            output[i] = (uint8_t)(((uint16_t)pixels[i] * g_brightness) / 255U);
+            val = (ws281x_pixel_t)(((uint32_t)val * g_brightness) / 255U);
         }
+#if WS281X_BITS_PER_CH == 16
+        output[out_idx++] = (uint8_t)(val >> 8);
+        output[out_idx++] = (uint8_t)(val & 0xFF);
+#else
+        output[out_idx++] = (uint8_t)val;
+#endif
     }
 }
 
