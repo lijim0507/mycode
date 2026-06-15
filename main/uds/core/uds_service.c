@@ -20,13 +20,6 @@
 /****************************************************************************/
 
 /****************************************************************************/
-/*						Prototypes Of Local Functions						*/
-/****************************************************************************/
-static uint16_t uds_did_from_data(const uint8_t *data);
-static const uds_data_identifier_t *uds_find_did(uint16_t did);
-static uint8_t generate_random_byte(void);
-
-/****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
 static uint8_t data_buf_1[3]  = {0x10, 0x11, 0x12};
@@ -105,50 +98,7 @@ const uds_service_t services_table[UDS_SERVICE_TABLE_SIZE] = {
 };
 
 /****************************************************************************/
-/*							Static Functions    						    */
-/****************************************************************************/
-/**
- * @brief 从请求数据中提取 16 位数据标识符 (DID)
- *
- * @param data 指向请求数据中 DID 的首字节（大端序）
- * @return uint16_t 提取得到的 DID 值
- */
-static uint16_t uds_did_from_data(const uint8_t *data)
-{
-    return ((uint16_t)data[0] << 8) | (uint16_t)data[1];
-}
-
-/**
- * @brief 在 DID 表中查找匹配的数据标识符条目
- *
- * @param did 要查找的数据标识符
- * @return const uds_data_identifier_t* 匹配的条目指针，未找到返回 NULL
- */
-static const uds_data_identifier_t *uds_find_did(uint16_t did)
-{
-    uint16_t i;
-    for (i = 0; i < UDS_DATA_TABLE_MAX; i++)
-    {
-        if (data_table[i].did == did)
-        {
-            return &data_table[i];
-        }
-    }
-    return NULL;
-}
-
-/**
- * @brief 生成一个伪随机字节，用于安全访问种子值
- *
- * @return uint8_t 伪随机字节
- */
-static uint8_t generate_random_byte(void)
-{
-    return (uint8_t)(rand() % 256);
-}
-
-/****************************************************************************/
-/*							Exported Functions    						    */
+/*					   	UDS 0x10 诊断会话控制服务处理函数					    */
 /****************************************************************************/
 
 /**
@@ -178,75 +128,38 @@ uds_handler_result_t uds_diag_session_control(uds_request_t *req, uds_response_t
     return UDS_HANDLER_DONE;
 }
 
+/****************************************************************************/
+/*				   		UDS 0x22 读数据标识符服务处理函数					    */
+/****************************************************************************/
+
 /**
- * @brief UDS 0x27 安全访问服务处理函数
+ * @brief 从请求数据中提取 16 位数据标识符 (DID)
  *
- * @param req  请求结构体指针
- * @param resp 响应结构体指针
- * @return uds_handler_result_t 处理结果
+ * @param data 指向请求数据中 DID 的首字节（大端序）
+ * @return uint16_t 提取得到的 DID 值
  */
-uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *resp)
+static uint16_t uds_did_from_data(const uint8_t *data)
 {
-    static uint8_t seed_value = 0;
-
-    if (req->sub_sid % 2 == 1 && req->sub_sid <= 0x05)
-    {
-        seed_value = generate_random_byte();
-
-        resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-        resp->data[0] = seed_value;
-        resp->data_len = 1;
-
-        return UDS_HANDLER_DONE;
-    }
-    else if (req->sub_sid == 0x02)
-    {
-        if (req->data_len >= 1 && req->data[0] == (uint8_t)(seed_value + 5))
-        {
-            uds_set_security_level(UDS_SEC_LEVEL_1);
-            resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-            resp->data_len = 0;
-            return UDS_HANDLER_DONE;
-        }
-        else
-        {
-            uds_send_negative_response(req->sid, NRC_INVALID_KEY);
-            return UDS_HANDLER_NRC_SENT;
-        }
-    }
-    else if (req->sub_sid == 0x04)
-    {
-        if (req->data_len >= 1 && req->data[0] == (uint8_t)(seed_value + 10))
-        {
-            uds_set_security_level(UDS_SEC_LEVEL_2);
-            resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-            resp->data_len = 0;
-            return UDS_HANDLER_DONE;
-        }
-        else
-        {
-            uds_send_negative_response(req->sid, NRC_INVALID_KEY);
-            return UDS_HANDLER_NRC_SENT;
-        }
-    }
-
-    uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
-    return UDS_HANDLER_NRC_SENT;
+    return ((uint16_t)data[0] << 8) | (uint16_t)data[1];
 }
 
 /**
- * @brief UDS 0x3E Tester Present 服务处理函数
+ * @brief 在 DID 表中查找匹配的数据标识符条目
  *
- * @param req  请求结构体指针
- * @param resp 响应结构体指针
- * @return uds_handler_result_t 处理结果
+ * @param did 要查找的数据标识符
+ * @return const uds_data_identifier_t* 匹配的条目指针，未找到返回 NULL
  */
-uds_handler_result_t uds_tester_present(uds_request_t *req, uds_response_t *resp)
+static const uds_data_identifier_t *uds_find_did(uint16_t did)
 {
-    resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-    resp->data_len = 0;
-
-    return UDS_HANDLER_DONE;
+    uint16_t i;
+    for (i = 0; i < UDS_DATA_TABLE_MAX; i++)
+    {
+        if (data_table[i].did == did)
+        {
+            return &data_table[i];
+        }
+    }
+    return NULL;
 }
 
 /**
@@ -308,6 +221,80 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
     return UDS_HANDLER_DONE;
 }
 
+/****************************************************************************/
+/*				   		UDS 0x27 安全访问服务处理函数						    */
+/****************************************************************************/
+
+/**
+ * @brief 生成一个伪随机字节，用于安全访问种子值
+ *
+ * @return uint8_t 伪随机字节
+ */
+static uint8_t generate_random_byte(void)
+{
+    return (uint8_t)(rand() % 256);
+}
+
+/**
+ * @brief UDS 0x27 安全访问服务处理函数
+ *
+ * @param req  请求结构体指针
+ * @param resp 响应结构体指针
+ * @return uds_handler_result_t 处理结果
+ */
+uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *resp)
+{
+    static uint8_t seed_value = 0;
+
+    if (req->sub_sid % 2 == 1 && req->sub_sid <= 0x05)
+    {
+        seed_value = generate_random_byte();
+
+        resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
+        resp->data[0] = seed_value;
+        resp->data_len = 1;
+
+        return UDS_HANDLER_DONE;
+    }
+    else if (req->sub_sid == 0x02)
+    {
+        if (req->data_len >= 1 && req->data[0] == (uint8_t)(seed_value + 5))
+        {
+            uds_set_security_level(UDS_SEC_LEVEL_1);
+            resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
+            resp->data_len = 0;
+            return UDS_HANDLER_DONE;
+        }
+        else
+        {
+            uds_send_negative_response(req->sid, NRC_INVALID_KEY);
+            return UDS_HANDLER_NRC_SENT;
+        }
+    }
+    else if (req->sub_sid == 0x04)
+    {
+        if (req->data_len >= 1 && req->data[0] == (uint8_t)(seed_value + 10))
+        {
+            uds_set_security_level(UDS_SEC_LEVEL_2);
+            resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
+            resp->data_len = 0;
+            return UDS_HANDLER_DONE;
+        }
+        else
+        {
+            uds_send_negative_response(req->sid, NRC_INVALID_KEY);
+            return UDS_HANDLER_NRC_SENT;
+        }
+    }
+
+    uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
+    return UDS_HANDLER_NRC_SENT;
+}
+
+/****************************************************************************/
+/*				   		UDS 0x2E 写数据标识符服务处理函数					    */
+/****************************************************************************/
+
 /**
  * @brief UDS 0x2E 写数据标识符服务处理函数
  *
@@ -361,6 +348,25 @@ uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *re
         (void)memcpy(did_entry->data_ptr, &req->data[2], write_len);
     }
 
+    resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
+    resp->data_len = 0;
+
+    return UDS_HANDLER_DONE;
+}
+
+/****************************************************************************/
+/*				   		UDS 0x3E Tester Present 服务处理函数				    */
+/****************************************************************************/
+
+/**
+ * @brief UDS 0x3E Tester Present 服务处理函数
+ *
+ * @param req  请求结构体指针
+ * @param resp 响应结构体指针
+ * @return uds_handler_result_t 处理结果
+ */
+uds_handler_result_t uds_tester_present(uds_request_t *req, uds_response_t *resp)
+{
     resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
     resp->data_len = 0;
 
