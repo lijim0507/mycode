@@ -35,7 +35,7 @@ module_name/
 示例：
 
 - `eeprom/include/eeprom.h`
-- `isotp/include/isotp.h`
+- `diag/isotp/include/isotp.h`
 - `key/include/key.h`
 - `ws281x/include/ws281x.h`
 

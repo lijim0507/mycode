@@ -11,6 +11,9 @@ main/
 ├── at/                     # AT 指令 (SIM800/4G 蜂窝模组 UART)
 ├── ble/                    # BLE 蓝牙 (NimBLE GATT 外设)
 ├── can_simple/             # CAN 总线 (ODrive/SimpleFOC 电机控制协议)
+├── diag/                   # 汽车诊断协议栈
+│   ├── isotp/              #   ISO 15765-2 传输层 (CAN 上的 ISO-TP)
+│   └── uds/                #   ISO 14229 应用层 (UDS 诊断服务, 基于 ISO-TP)
 ├── eeprom/                 # EEPROM (I2C 24Cxx & SPI 25LCxx 抽象驱动)
 ├── foc/                    # FOC 数学库 (Clarke/Park 坐标变换)
 ├── imu/                    # IMU 惯性测量 (ICM-42688-P, SPI)
@@ -21,7 +24,6 @@ main/
 ├── swi2c and eeprom driver/ # [旧版] SWI2C + EEPROM 一体化驱动
 ├── udisk/                  # USB Host 优盘存储 (FatFS 数据记录)
 ├── uart/                     # 通用帧解析器 (复制改格式检测即可适配新协议)
-├── uds/                    # UDS 汽车诊断协议 (ISO 15765-2 ISOTP over CAN)
 ├── utility/                # 通用工具函数 (数值钳位、类型转换)
 ├── ws2812/                 # WS2812 可寻址 RGB LED 灯带
 ├── main.h                  # RTOS 信号量/队列统一接口
