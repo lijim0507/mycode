@@ -9,6 +9,9 @@
 /*					  LED Count Configuration								*/
 /****************************************************************************/
 
+typedef uint16_t ws2816_value_t;
+
+
 #ifndef WS281X_MAX_LEDS
 #define WS281X_MAX_LEDS          10U
 #endif
