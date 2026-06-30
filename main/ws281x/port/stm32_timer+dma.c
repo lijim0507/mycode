@@ -9,27 +9,28 @@
 
 /*
  * ===================================================================
- *  STM32 Timer + DMA 移植层 (REFERENCE IMPLEMENTATION)
+ *  STM32 Timer + DMA 移植层 (DOUBLE-BUFFER REFILL)
  *
- *  本文件为 STM32 平台的参考实现，使用定时器 PWM 输出 + DMA 方式
- *  驱动 WS281X 系列灯珠。当前项目目标平台为 ESP32-S3，本文件不
- *  参与编译，仅供移植参考。
+ *  使用固定大小的 DMA ping-pong buffer + 循环 DMA + 半/全完成
+ *  中断方式驱动 WS281X 灯带。每 bit 原始数据展开为 1 word 波形，
+ *  但 DMA buffer 尺寸不再与 LED 数量成正比，大幅节省 RAM。
  *
  *  原理：
- *    定时器以 PWM 模式产生固定周期 (1.25us) 的方波，高电平宽度
- *    区分逻辑 0/1：
- *      - 逻辑 0：高电平约 400ns
- *      - 逻辑 1：高电平约 800ns
- *    DMA 在每次定时器溢出 (Update 事件) 时自动将预计算的下一个
- *    CCR 值传输到比较寄存器，刷新占空比。CPU 仅在准备数据阶段
- *    参与，发送过程由硬件自动完成。
+ *    定时器 PWM 输出固定周期 (1.25us) 方波。DMA 循环模式下，每
+ *    传输完半区触发 HT/TC 中断，ISR 内将 encode_buf 的下批 bit
+ *    展开填入刚发完的半区。
+ *
+ *    所有 bit 发送完毕后转入 reset 阶段：往后 3 轮中断持续填零，
+ *    确保至少 HALF_WORDS 个零 word (×1.25us) 已传输，满足 >50us
+ *    的 RESET 时序，随后主动停止 DMA。
  *
  *  STM32 上使用时：
- *    1. 在项目编译选项中按需重定义下方各宏 (TIM 句柄/GPIO/LED 数)
+ *    1. 在项目编译选项中按需重定义下方各宏 (TIM/GPIO/LED/DMA)
  *    2. 替换 esp32_rmt.c 为本文件参与编译
- *    3. CubeMX 需预先配置：
+ *    3. CubeMX 需预先配置 DMA CIRCULAR 模式：
  *       - 定时器通道 "PWM Generation CHx"
- *       - DMA MemToPeriph 关联该定时器 Update 请求
+ *       - DMA MemToPeriph 关联该定时器 Update 请求，
+ *         Mode: Circular, Data Width: Half Word
  *       - GPIO 复用功能 + 时钟使能
  * ===================================================================
  */
@@ -49,8 +50,7 @@
 /****************************************************************************/
 
 /*
- * ---- 根据实际硬件修改以下宏定义 ----
- * 默认配置: TIM4_CH2, PD13, GPIO_AF2_TIM4, 240MHz, 10 灯
+ * ---- 硬件引脚 & 定时器宏 ----
  */
 #ifndef WS281X_STM32_TIM_HANDLE
 extern TIM_HandleTypeDef htim4;
@@ -82,14 +82,29 @@ extern TIM_HandleTypeDef htim4;
 #endif
 
 /**
- * @brief  WS281X 时序参数 (固定值，无需修改)
+ * @brief  WS281X 时序参数 (固定值)
  */
 #define WS281X_BIT_PERIOD_NS      1250U
 #define WS281X_T0H_NS              350U
 #define WS281X_T1H_NS              850U
 
+/**
+ * @brief  DMA 双缓冲半区大小
+ *        64 words 半区 = 80us > 50us RESET 最短要求
+ *        256 words 半区 = 320us，给中断处理留出充足余量
+ */
+#ifndef WS281X_DMA_HALF_WORDS
+#define WS281X_DMA_HALF_WORDS     256U
+#endif
+
+#if WS281X_DMA_HALF_WORDS < 64U
+#error "WS281X_DMA_HALF_WORDS must be >= 64 for RESET timing (64 × 1.25us = 80us > 50us)"
+#endif
+
+#define WS281X_DMA_BUF_WORDS      (WS281X_DMA_HALF_WORDS * 2U)
+
 /****************************************************************************/
-/*								Typedefs									*/
+/*                              Typedefs                                    */
 /****************************************************************************/
 
 /**
@@ -103,7 +118,6 @@ typedef struct
     uint32_t           code_1;
     uint32_t           arr;
     uint16_t          *dma_buf;
-    uint32_t           buf_capacity;
     volatile bool      busy;
 } stm32_timer_dma_ctx_t;
 
@@ -115,32 +129,87 @@ static int stm32_timer_dma_init(void);
 static int stm32_timer_dma_transmit(const uint8_t *data, uint32_t len);
 static int stm32_timer_dma_is_busy(void);
 static int stm32_timer_dma_deinit(void);
+static int fill_half(uint16_t *half, uint32_t count);
 
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
 
 static stm32_timer_dma_ctx_t g_stm32;
-#define WS281X_DMA_BUF_WORDS  (WS281X_MAX_FRAME_SIZE * 8 + 224)
 static uint16_t g_dma_buf[WS281X_DMA_BUF_WORDS];
+
+static const uint8_t *g_src_ptr;
+static uint32_t       g_src_remaining;
+static uint8_t        g_bit_pos;
+static uint8_t        g_reset_cnt;
 
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
 
 /**
+ * @brief  将编码数据逐 bit 展开填入 DMA 半区
+ * @param  half  半区起始地址
+ * @param  count 半区 word 数
+ * @return 1: 仍有未发送数据, 0: 全部 encode 数据已处理完毕
+ */
+static int fill_half(uint16_t *half, uint32_t count)
+{
+    for (uint32_t i = 0; i < count; i++)
+    {
+        if (g_src_remaining == 0U)
+        {
+            half[i] = 0U;
+        }
+        else
+        {
+            if ((*g_src_ptr) & (0x80U >> g_bit_pos))
+            {
+                half[i] = (uint16_t)g_stm32.code_1;
+            }
+            else
+            {
+                half[i] = (uint16_t)g_stm32.code_0;
+            }
+
+            g_bit_pos++;
+            if (g_bit_pos >= 8U)
+            {
+                g_bit_pos = 0U;
+                g_src_ptr++;
+                g_src_remaining--;
+            }
+        }
+    }
+
+    return (g_src_remaining > 0U) ? 1 : 0;
+}
+
+/**
+ * @brief  清理指定地址范围的 D-Cache
+ * @param  addr 起始地址 (自动向下对齐到 32 字节边界)
+ * @param  size 字节数
+ */
+static void dcache_clean(void *addr, uint32_t size)
+{
+    uint32_t a = (uintptr_t)addr;
+    uint32_t align = a & 0x1FU;
+
+    SCB_CleanDCache_by_Addr((uint32_t *)(a & ~0x1FU), size + 32U + align);
+}
+
+/**
  * @brief  定时器 + DMA 硬件初始化
  * @return 0: 成功, -1: 时钟过低导致时序不可实现
- * @note   所有硬件配置通过文件顶部宏定义指定
  */
 static int stm32_timer_dma_init(void)
 {
     TIM_OC_InitTypeDef sConfigOC;
     GPIO_InitTypeDef gpio_init;
     TIM_HandleTypeDef *htim;
-    uint32_t ticks_per_bit = 0;
-    uint32_t ticks_t0h = 0;
-    uint32_t ticks_t1h = 0;
+    uint32_t ticks_per_bit;
+    uint32_t ticks_t0h;
+    uint32_t ticks_t1h;
 
     memset(&g_stm32, 0, sizeof(g_stm32));
 
@@ -158,9 +227,7 @@ static int stm32_timer_dma_init(void)
     g_stm32.code_1      = ticks_t1h;
     g_stm32.htim        = WS281X_STM32_TIM_HANDLE;
     g_stm32.tim_channel = WS281X_STM32_TIM_CHANNEL;
-
-    g_stm32.buf_capacity = WS281X_MAX_FRAME_SIZE * 8 + 224;
-    g_stm32.dma_buf = g_dma_buf;
+    g_stm32.dma_buf     = g_dma_buf;
 
     htim = WS281X_STM32_TIM_HANDLE;
 
@@ -173,7 +240,7 @@ static int stm32_timer_dma_init(void)
     HAL_TIM_Base_Init(htim);
 
     sConfigOC.OCMode     = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse      = 0;
+    sConfigOC.Pulse      = 0U;
     sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
 
@@ -195,45 +262,29 @@ static int stm32_timer_dma_init(void)
  * @brief  将编码后的数据通过 Timer+DMA 发送到灯带
  * @param  data 编码后的发送缓冲区
  * @param  len  数据长度 (字节)
- * @return 0: 成功, -1: 上次传输未完成
+ * @return 0: 成功, -1: 上次传输未完成或参数错误
  */
 static int stm32_timer_dma_transmit(const uint8_t *data, uint32_t len)
 {
-    uint32_t bit_idx;
-
-    if (g_stm32.busy)
+    if (len == 0U || g_stm32.busy)
     {
         return -1;
     }
 
-    memset(g_stm32.dma_buf, 0, g_stm32.buf_capacity * sizeof(uint16_t));
+    g_src_ptr       = data;
+    g_src_remaining = len;
+    g_bit_pos       = 0U;
+    g_reset_cnt     = 0U;
 
-    bit_idx = 0;
+    fill_half(g_dma_buf, WS281X_DMA_HALF_WORDS);
+    fill_half(g_dma_buf + WS281X_DMA_HALF_WORDS, WS281X_DMA_HALF_WORDS);
 
-    for (uint32_t i = 0; i < len; i++)
-    {
-        uint8_t byte = data[i];
-        for (int8_t b = 7; b >= 0; b--)
-        {
-            if (byte & (1U << (uint8_t)b))
-            {
-                g_stm32.dma_buf[bit_idx] = g_stm32.code_1;
-            }
-            else
-            {
-                g_stm32.dma_buf[bit_idx] = g_stm32.code_0;
-            }
-            bit_idx++;
-        }
-    }
-
-    SCB_CleanDCache_by_Addr((uint32_t *)((uintptr_t)g_stm32.dma_buf & ~0x1FU),
-                            (g_stm32.buf_capacity * sizeof(uint16_t) + 32U + ((uintptr_t)g_stm32.dma_buf & 0x1FU)));
+    dcache_clean(g_dma_buf, WS281X_DMA_BUF_WORDS * sizeof(uint16_t));
 
     g_stm32.busy = true;
 
     HAL_TIM_PWM_Start_DMA(g_stm32.htim, g_stm32.tim_channel,
-                          (uint32_t *)g_stm32.dma_buf, (uint16_t)g_stm32.buf_capacity);
+                          (uint32_t *)g_dma_buf, (uint16_t)WS281X_DMA_BUF_WORDS);
 
     return 0;
 }
@@ -244,18 +295,6 @@ static int stm32_timer_dma_transmit(const uint8_t *data, uint32_t len)
  */
 static int stm32_timer_dma_is_busy(void)
 {
-    if (g_stm32.busy)
-    {
-        DMA_HandleTypeDef *hdma;
-
-        hdma = g_stm32.htim->hdma[(uint8_t)(g_stm32.tim_channel >> 2U)];
-        if (hdma != NULL && hdma->State == HAL_DMA_STATE_READY)
-        {
-            HAL_TIM_PWM_Stop_DMA(g_stm32.htim, g_stm32.tim_channel);
-            g_stm32.busy = false;
-        }
-    }
-
     return g_stm32.busy ? 1 : 0;
 }
 
@@ -269,6 +308,7 @@ static int stm32_timer_dma_deinit(void)
     {
         HAL_TIM_PWM_Stop_DMA(g_stm32.htim, g_stm32.tim_channel);
     }
+
     HAL_TIM_PWM_DeInit(g_stm32.htim);
 
     if (g_stm32.dma_buf != NULL)
@@ -281,14 +321,61 @@ static int stm32_timer_dma_deinit(void)
 }
 
 /**
- * @brief  DMA 发送完成回调 (HAL 弱函数重写)
+ * @brief  DMA 半传输完成回调 (HT) — 上半区 A 刚发完
+ * @note   HAL 弱函数重写，DMA 在循环模式下每次过半区触发一次
+ */
+void HAL_TIM_PWM_PulseFinishedHalfCpltCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim != g_stm32.htim)
+    {
+        return;
+    }
+
+    fill_half(g_dma_buf, WS281X_DMA_HALF_WORDS);
+    dcache_clean(g_dma_buf, WS281X_DMA_HALF_WORDS * sizeof(uint16_t));
+
+    if (g_reset_cnt > 0U)
+    {
+        g_reset_cnt--;
+        if (g_reset_cnt == 0U)
+        {
+            HAL_TIM_PWM_Stop_DMA(g_stm32.htim, g_stm32.tim_channel);
+            g_stm32.busy = false;
+        }
+    }
+    else if (g_src_remaining == 0U)
+    {
+        g_reset_cnt = 3U;
+    }
+}
+
+/**
+ * @brief  DMA 全传输完成回调 (TC) — 下半区 B 刚发完
+ * @note   HAL 弱函数重写，DMA 循环模式下每次绕回起始处触发一次
  */
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim == g_stm32.htim)
+    if (htim != g_stm32.htim)
     {
-        HAL_TIM_PWM_Stop_DMA(g_stm32.htim, g_stm32.tim_channel);
-        g_stm32.busy = false;
+        return;
+    }
+
+    fill_half(g_dma_buf + WS281X_DMA_HALF_WORDS, WS281X_DMA_HALF_WORDS);
+    dcache_clean(g_dma_buf + WS281X_DMA_HALF_WORDS,
+                 WS281X_DMA_HALF_WORDS * sizeof(uint16_t));
+
+    if (g_reset_cnt > 0U)
+    {
+        g_reset_cnt--;
+        if (g_reset_cnt == 0U)
+        {
+            HAL_TIM_PWM_Stop_DMA(g_stm32.htim, g_stm32.tim_channel);
+            g_stm32.busy = false;
+        }
+    }
+    else if (g_src_remaining == 0U)
+    {
+        g_reset_cnt = 3U;
     }
 }
 

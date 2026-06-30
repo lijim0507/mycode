@@ -1,5 +1,5 @@
 file(GLOB_RECURSE srcs  "main.c" 
-                        "uds/*.c"  
+                        "diag/uds/*.c"
                         "can_simple/*.c")
 
 set(board_srcs "board/board_esp32_devkit.c")
@@ -45,7 +45,8 @@ list(APPEND srcs ${board_srcs}
 
 idf_component_register( SRCS "board_esp32.c" "${srcs}"
 
-                        INCLUDE_DIRS    "./uds"
+                        INCLUDE_DIRS    "./diag/uds/include"
+                                        "./diag/uds/port"
                                         "./can_simple"
                                         "./board"
                                         "./ws2812/include"

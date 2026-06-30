@@ -51,7 +51,16 @@ static void ws281x_encode(ws281x_handle_t dev, const uint16_t *pixels, uint8_t *
 /****************************************************************************/
 
 static ws281x_dev_t g_dev;
-
+static const ws2816_driver_t *s_driver;
+static ws2816_value_t s_pixels[WS2816_LED_COUNT * WS2816_CHANNELS_PER_LED];
+static uint32_t s_led_count;
+static uint8_t s_brightness = 255U;
+static bool s_initialized;
+static ws2816_gain_t s_gain = {
+    WS2816_CURRENT_GAIN_MAX,
+    WS2816_CURRENT_GAIN_MAX,
+    WS2816_CURRENT_GAIN_MAX
+};
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
