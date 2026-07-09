@@ -35,18 +35,52 @@ typedef struct swi2c_driver {
 } swi2c_driver_t;
 
 /**
- * @brief  I2C 传输抽象接口（core 层对上层暴露）
- * @note   上层模块（如 EEPROM）通过此接口使用 I2C 总线，无需直接依赖 swi2c 全局函数。
- *         与 swi2c_driver_t 的区别：driver 面向硬件操作，transport 面向协议操作。
+ * @brief  I2C 传输抽象接口（事务级）
+ * @note   上层模块（如 EEPROM、BQ40Z80）通过此接口使用 I2C 总线。
+ *         与 swi2c_driver_t 的区别：driver 面向硬件操作（位级），transport 面向事务操作。
+ *         此接口与 ESP-IDF I2C master / STM32 HAL I2C 的 API 形状一致，
+ *         方便各平台用硬件 I2C 直接实现。
  */
 typedef struct i2c_transport {
-    int     (*start)(void);
-    int     (*stop)(void);
-    int     (*send_byte)(uint8_t byte);
-    uint8_t (*receive_byte)(void);
-    int     (*send_ack)(uint8_t bit);
-    uint8_t (*receive_ack)(void);
+    /**
+     * @brief  主机发送
+     * @param  dev_addr   7-bit 设备地址
+     * @param  data       数据缓冲区
+     * @param  len        数据长度
+     * @param  timeout_ms 超时时间（毫秒），传 0 使用默认值
+     * @return 0: 成功, 负值: 总线错误（-3: NACK/超时）
+     */
+    int (*write)(uint8_t dev_addr, const uint8_t *data, uint16_t len, uint32_t timeout_ms);
+
+    /**
+     * @brief  主机接收
+     * @param  dev_addr   7-bit 设备地址
+     * @param  data       数据缓冲区
+     * @param  len        数据长度
+     * @param  timeout_ms 超时时间（毫秒），传 0 使用默认值
+     * @return 0: 成功, 负值: 总线错误（-3: NACK/超时）
+     */
+    int (*read)(uint8_t dev_addr, uint8_t *data, uint16_t len, uint32_t timeout_ms);
+
+    /**
+     * @brief  先写后读（中间插入 repeated start）
+     * @param  dev_addr   7-bit 设备地址
+     * @param  wr_data    待写入数据
+     * @param  wr_len     写入长度
+     * @param  rd_data    读取缓冲区
+     * @param  rd_len     读取长度
+     * @param  timeout_ms 超时时间（毫秒），传 0 使用默认值
+     * @return 0: 成功, 负值: 总线错误（-3: NACK/超时）
+     * @note   对应 I2C 的 write + repeated start + read 时序，
+     *         覆盖 SMBus read word/block、I2C EEPROM 随机读等常见操作。
+     */
+    int (*write_read)(uint8_t dev_addr, const uint8_t *wr_data, uint16_t wr_len,
+                      uint8_t *rd_data, uint16_t rd_len, uint32_t timeout_ms);
 } i2c_transport_t;
+
+#ifndef SWI2C_DEFAULT_TIMEOUT_MS
+#define SWI2C_DEFAULT_TIMEOUT_MS    100
+#endif
 
 /****************************************************************************/
 /*                      Exproted Variables                                  */
@@ -112,9 +146,10 @@ int      swi2c_send_ack(uint8_t bit);
 uint8_t  swi2c_receive_ack(void);
 
 /**
- * @brief  获取 I2C 传输接口实例（依赖注入）
- * @return i2c_transport_t 结构体指针，供上层模块（如 EEPROM）解耦调用
- * @note   调用方通过此接口访问 I2C 总线，无需直接引用 swi2c_xxx() 全局函数
+ * @brief  获取软件 I2C 的事务级传输接口实例
+ * @return i2c_transport_t 结构体指针，供上层模块（如 EEPROM、BQ40Z80）解耦调用
+ * @note   事务级 write/read/write_read 在内部由位级 GPIO 操作实现。
+ *         硬件 I2C 端口请用 esp32_i2c_port_get_transport() / stm32_i2c_port_get_transport()。
  */
 const i2c_transport_t *swi2c_get_transport(void);
 

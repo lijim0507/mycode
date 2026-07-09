@@ -19,6 +19,12 @@
 static void    swi2c_send_bit(uint8_t bit);
 static uint8_t swi2c_receive_bit(void);
 
+static int  swi2c_i2c_write(uint8_t dev_addr, const uint8_t *data, uint16_t len, uint32_t timeout_ms);
+static int  swi2c_i2c_read(uint8_t dev_addr, uint8_t *data, uint16_t len, uint32_t timeout_ms);
+static int  swi2c_i2c_write_read(uint8_t dev_addr, const uint8_t *wr_data, uint16_t wr_len,
+                                  uint8_t *rd_data, uint16_t rd_len, uint32_t timeout_ms);
+static int  swi2c_send_byte_check_ack(uint8_t byte);
+
 /****************************************************************************/
 /*                          Global Variables                                */
 /****************************************************************************/
@@ -196,19 +202,16 @@ uint8_t swi2c_receive_ack(void)
 }
 
 /**
- * @brief  获取 I2C 传输接口实例
+ * @brief  获取软件 I2C 的事务级传输接口实例
  * @return i2c_transport_t 结构体指针
- * @note   将 core 层的公共函数封装为传输接口，供上层模块依赖注入
+ * @note   事务级 write/read/write_read 在内部由位级 GPIO 操作实现
  */
 const i2c_transport_t *swi2c_get_transport(void)
 {
     static const i2c_transport_t transport = {
-        .start        = swi2c_start,
-        .stop         = swi2c_stop,
-        .send_byte    = swi2c_send_byte,
-        .receive_byte = swi2c_receive_byte,
-        .send_ack     = swi2c_send_ack,
-        .receive_ack  = swi2c_receive_ack,
+        .write      = swi2c_i2c_write,
+        .read       = swi2c_i2c_read,
+        .write_read = swi2c_i2c_write_read,
     };
     return &transport;
 }
@@ -251,6 +254,198 @@ static uint8_t swi2c_receive_bit(void)
     g_driver->scl_set(0);
 
     return bit;
+}
+
+/* --- 事务级 I2C 操作（基于位级原语实现） --- */
+
+/**
+ * @brief  发送一个字节并检查应答（事务级内部使用）
+ * @return 0: ACK, -3: NACK
+ */
+static int swi2c_send_byte_check_ack(uint8_t byte)
+{
+    g_driver->sda_set(byte & 0x80 ? 1 : 0);
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        g_driver->scl_set(0);
+        g_driver->sda_set(byte & (0x80 >> i) ? 1 : 0);
+        g_driver->delay_us();
+        g_driver->scl_set(1);
+        g_driver->delay_us();
+    }
+    g_driver->scl_set(0);
+    g_driver->sda_set(0);
+
+    /* 检查 ACK */
+    g_driver->sda_set(1);
+    g_driver->scl_set(0);
+    g_driver->delay_us();
+    g_driver->scl_set(1);
+    uint8_t ack = g_driver->sda_get();
+    g_driver->delay_us();
+    g_driver->scl_set(0);
+
+    return (ack == 0) ? 0 : -3;
+}
+
+/**
+ * @brief  接收一个字节并控制应答（事务级内部使用）
+ * @param  send_ack 0: 发送 ACK（继续读）, 1: 发送 NACK（最后一个字节）
+ * @return 接收到的字节
+ */
+static uint8_t swi2c_receive_byte_ack(uint8_t send_ack)
+{
+    uint8_t byte = 0;
+
+    g_driver->sda_set(1);
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        g_driver->scl_set(0);
+        g_driver->delay_us();
+        g_driver->scl_set(1);
+        if (g_driver->sda_get())
+        {
+            byte |= (0x80 >> i);
+        }
+        g_driver->delay_us();
+    }
+    g_driver->scl_set(0);
+
+    /* 发送 ACK/NACK */
+    g_driver->sda_set(send_ack ? 1 : 0);
+    g_driver->delay_us();
+    g_driver->scl_set(1);
+    g_driver->delay_us();
+    g_driver->scl_set(0);
+    g_driver->sda_set(1);
+
+    return byte;
+}
+
+/**
+ * @brief  发送 I2C 起始信号（直接操作 GPIO，不检查 g_initialized）
+ */
+static void swi2c_i2c_start(void)
+{
+    g_driver->sda_set(1);
+    g_driver->scl_set(1);
+    g_driver->delay_us();
+    g_driver->sda_set(0);
+    g_driver->delay_us();
+    g_driver->scl_set(0);
+}
+
+/**
+ * @brief  发送 I2C 停止信号
+ */
+static void swi2c_i2c_stop(void)
+{
+    g_driver->sda_set(0);
+    g_driver->scl_set(1);
+    g_driver->delay_us();
+    g_driver->sda_set(1);
+    g_driver->delay_us();
+}
+
+/**
+ * @brief  事务级 I2C write
+ */
+static int swi2c_i2c_write(uint8_t dev_addr, const uint8_t *data, uint16_t len, uint32_t timeout_ms)
+{
+    (void)timeout_ms;
+
+    swi2c_i2c_start();
+
+    if (swi2c_send_byte_check_ack((uint8_t)(dev_addr << 1)) != 0)
+    {
+        goto fail;
+    }
+
+    for (uint16_t i = 0; i < len; i++)
+    {
+        if (swi2c_send_byte_check_ack(data[i]) != 0)
+        {
+            goto fail;
+        }
+    }
+
+    swi2c_i2c_stop();
+    return 0;
+
+fail:
+    swi2c_i2c_stop();
+    return -3;
+}
+
+/**
+ * @brief  事务级 I2C read
+ */
+static int swi2c_i2c_read(uint8_t dev_addr, uint8_t *data, uint16_t len, uint32_t timeout_ms)
+{
+    (void)timeout_ms;
+
+    swi2c_i2c_start();
+
+    if (swi2c_send_byte_check_ack((uint8_t)((dev_addr << 1) | 0x01)) != 0)
+    {
+        goto fail;
+    }
+
+    for (uint16_t i = 0; i < len; i++)
+    {
+        data[i] = swi2c_receive_byte_ack((i < (uint16_t)(len - 1)) ? 0 : 1);
+    }
+
+    swi2c_i2c_stop();
+    return 0;
+
+fail:
+    swi2c_i2c_stop();
+    return -3;
+}
+
+/**
+ * @brief  事务级 I2C write + repeated start + read
+ */
+static int swi2c_i2c_write_read(uint8_t dev_addr, const uint8_t *wr_data, uint16_t wr_len,
+                                 uint8_t *rd_data, uint16_t rd_len, uint32_t timeout_ms)
+{
+    (void)timeout_ms;
+
+    swi2c_i2c_start();
+
+    if (swi2c_send_byte_check_ack((uint8_t)(dev_addr << 1)) != 0)
+    {
+        goto fail;
+    }
+
+    for (uint16_t i = 0; i < wr_len; i++)
+    {
+        if (swi2c_send_byte_check_ack(wr_data[i]) != 0)
+        {
+            goto fail;
+        }
+    }
+
+    /* repeated start */
+    swi2c_i2c_start();
+
+    if (swi2c_send_byte_check_ack((uint8_t)((dev_addr << 1) | 0x01)) != 0)
+    {
+        goto fail;
+    }
+
+    for (uint16_t i = 0; i < rd_len; i++)
+    {
+        rd_data[i] = swi2c_receive_byte_ack((i < (uint16_t)(rd_len - 1)) ? 0 : 1);
+    }
+
+    swi2c_i2c_stop();
+    return 0;
+
+fail:
+    swi2c_i2c_stop();
+    return -3;
 }
 
 /****************************************************************************/

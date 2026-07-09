@@ -30,7 +30,6 @@
 /* --- I2C 内部函数 --- */
 static int eeprom_i2c_write_page(uint32_t address, const uint8_t *data, uint16_t size);
 static int eeprom_i2c_read_chunk(uint32_t address, uint8_t *data, uint16_t size);
-static int eeprom_i2c_send_write_header(uint32_t address);
 
 /* --- SPI 内部函数 --- */
 static int  eeprom_spi_write_page(uint32_t address, const uint8_t *data, uint16_t size);
@@ -84,9 +83,7 @@ int eeprom_init(eeprom_config_t *config, const void *transport)
         }
 
         const i2c_transport_t *i2c = (const i2c_transport_t *)transport;
-        if (!i2c->start || !i2c->stop
-            || !i2c->send_byte || !i2c->receive_byte
-            || !i2c->send_ack || !i2c->receive_ack)
+        if (!i2c->write || !i2c->read || !i2c->write_read)
         {
             return -2;
         }
@@ -286,92 +283,46 @@ int eeprom_write_bytes(uint32_t address, const uint8_t *data, uint16_t size)
 /****************************************************************************/
 
 /**
- * @brief  I2C: 发送写地址头（设备地址 + 字地址）
- */
-static int eeprom_i2c_send_write_header(uint32_t address)
-{
-    g_i2c->send_byte((uint8_t)((g_config.device_addr << 1) | 0x00));
-    if (g_i2c->receive_ack() != 0)
-    {
-        return -1;
-    }
-
-    for (int i = g_config.addr_bytes - 1; i >= 0; i--)
-    {
-        g_i2c->send_byte((uint8_t)(address >> (uint8_t)(i * 8)));
-        if (g_i2c->receive_ack() != 0)
-        {
-            return -1;
-        }
-    }
-
-    return 0;
-}
-
-/**
  * @brief  I2C: 单页写入
+ * @note   通过事务级 i2c_transport_t 一次性发送地址 + 数据
  */
 static int eeprom_i2c_write_page(uint32_t address, const uint8_t *data, uint16_t size)
 {
-    g_i2c->start();
+    uint8_t  buf[258]; /* addr_bytes ≤ 2 + page_size ≤ 256 */
+    uint8_t  addr_len = g_config.addr_bytes;
+    int      ret;
 
-    if (eeprom_i2c_send_write_header(address) != 0)
+    for (uint8_t i = 0; i < addr_len; i++)
     {
-        g_i2c->stop();
-        return -3;
+        buf[i] = (uint8_t)(address >> (uint8_t)((addr_len - 1 - i) * 8));
     }
-
     for (uint16_t i = 0; i < size; i++)
     {
-        g_i2c->send_byte(data[i]);
-        if (g_i2c->receive_ack() != 0)
-        {
-            g_i2c->stop();
-            return -3;
-        }
+        buf[addr_len + i] = data[i];
     }
 
-    g_i2c->stop();
-    return 0;
+    ret = g_i2c->write(g_config.device_addr, buf, (uint16_t)(addr_len + size), 0);
+    return (ret == 0) ? 0 : -3;
 }
 
 /**
- * @brief  I2C: 单段读取（随机地址读取 + 当前地址读取）
+ * @brief  I2C: 单段读取（随机地址读取）
+ * @note   通过事务级 write_read 实现：先写字地址（repeated start），再读数据
  */
 static int eeprom_i2c_read_chunk(uint32_t address, uint8_t *data, uint16_t size)
 {
-    g_i2c->start();
+    uint8_t addr_buf[2];
+    uint8_t addr_len = g_config.addr_bytes;
+    int     ret;
 
-    if (eeprom_i2c_send_write_header(address) != 0)
+    for (uint8_t i = 0; i < addr_len; i++)
     {
-        g_i2c->stop();
-        return -3;
+        addr_buf[i] = (uint8_t)(address >> (uint8_t)((addr_len - 1 - i) * 8));
     }
 
-    g_i2c->start();
-    g_i2c->send_byte((uint8_t)((g_config.device_addr << 1) | 0x01));
-    if (g_i2c->receive_ack() != 0)
-    {
-        g_i2c->stop();
-        return -3;
-    }
-
-    for (uint16_t i = 0; i < size; i++)
-    {
-        data[i] = g_i2c->receive_byte();
-
-        if (i < (uint16_t)(size - 1))
-        {
-            g_i2c->send_ack(0);
-        }
-        else
-        {
-            g_i2c->send_ack(1);
-        }
-    }
-
-    g_i2c->stop();
-    return 0;
+    ret = g_i2c->write_read(g_config.device_addr, addr_buf, addr_len,
+                            data, size, 0);
+    return (ret == 0) ? 0 : -3;
 }
 
 /****************************************************************************/

@@ -41,7 +41,7 @@ static spi_eeprom_transport_t g_spi_transport;
 
 const i2c_transport_t *eeprom_port_get_i2c(void)
 {
-    return swi2c_port_get_driver();
+    return swi2c_get_transport();
 }
 
 const spi_eeprom_transport_t *eeprom_port_get_spi(void)
