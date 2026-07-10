@@ -29,8 +29,10 @@ extern "C" {
 /**
  * @brief  获取 BQ40Z80 使用的 I2C 传输接口实例
  * @return i2c_transport_t 结构体指针
- * @note   由平台 port 实现决定底层是软件 I2C 还是硬件 I2C。
- *         当前实现复用项目中的 swi2c 模块，使用前需先初始化 swi2c。
+ * @note   由对应平台的 port 文件决定底层是软件 I2C 还是硬件 I2C。
+ *         ESP32 默认使用硬件 I2C（esp32_i2c_port_get_transport），
+ *         STM32 默认使用硬件 I2C（stm32_i2c_port_get_transport），
+ *         也可改用 swi2c_get_transport() 使用软件 I2C。
  */
 const i2c_transport_t *bq40z80_port_get_i2c(void);
 

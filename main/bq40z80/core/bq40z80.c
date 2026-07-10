@@ -35,26 +35,20 @@ static bool                   g_initialized;
 
 /**
  * @brief  初始化 BQ40Z80 模块
+ * @param  config BQ40Z80 配置，device_addr 传 0 时使用默认地址 BQ40Z80_DEFAULT_ADDR
+ * @return 0: 成功, -1: 参数错误, -2: transport 不完整
  */
-int bq40z80_init(const i2c_transport_t *i2c, const bq40z80_config_t *config)
+int bq40z80_init(void)
 {
-    if (!i2c || !config)
-    {
-        return -1;
-    }
 
-    if (!i2c->write || !i2c->read || !i2c->write_read)
+    g_i2c = bq40z80_port_get_i2c();
+
+    if (!g_i2c->write || !g_i2c->read || !g_i2c->write_read)
     {
         return -2;
     }
 
-    g_config = *config;
-    if (g_config.device_addr == 0)
-    {
-        g_config.device_addr = BQ40Z80_DEFAULT_ADDR;
-    }
 
-    g_i2c         = i2c;
     g_initialized = true;
 
     return 0;
@@ -62,6 +56,7 @@ int bq40z80_init(const i2c_transport_t *i2c, const bq40z80_config_t *config)
 
 /**
  * @brief  反初始化 BQ40Z80 模块
+ * @return 0: 成功
  */
 int bq40z80_deinit(void)
 {
@@ -73,6 +68,9 @@ int bq40z80_deinit(void)
 
 /**
  * @brief  SMBus read word
+ * @param  cmd   命令码
+ * @param  value 输出 16-bit 数据（小端）
+ * @return 0: 成功, -1: 参数错误/未初始化, -3: 总线通信失败
  */
 int bq40z80_read_word(bq40z80_cmd_t cmd, uint16_t *value)
 {
@@ -102,6 +100,9 @@ int bq40z80_read_word(bq40z80_cmd_t cmd, uint16_t *value)
 
 /**
  * @brief  SMBus write word
+ * @param  cmd   命令码
+ * @param  value 要写入的 16-bit 数据（小端）
+ * @return 0: 成功, -1: 参数错误/未初始化, -3: 总线通信失败
  */
 int bq40z80_write_word(bq40z80_cmd_t cmd, uint16_t value)
 {
@@ -128,10 +129,13 @@ int bq40z80_write_word(bq40z80_cmd_t cmd, uint16_t value)
 
 /**
  * @brief  SMBus read block
+ * @param  cmd  命令码
+ * @param  data 数据接收缓冲区
+ * @param  len  输入为缓冲区大小，输出为实际读取字节数
+ * @return 0: 成功, -1: 参数错误或缓冲区不足, -3: 总线通信失败
  * @note   分两步完成：先读计数字节，再发命令后读数据。
- *         中间有 STOP（非严格 SMBus 连续读取），bq40z80 对此容忍。
- *         对于 ManufacturerAccess block read，建议用 bq40z80_write_word() 写子命令，
- *         然后用 bq40z80_read_block() 读结果。
+ *         对于 ManufacturerAccess block read，建议先用 bq40z80_write_word() 写子命令，
+ *         再用 bq40z80_read_block() 读结果。
  */
 int bq40z80_read_block(bq40z80_cmd_t cmd, uint8_t *data, uint8_t *len)
 {
@@ -192,10 +196,14 @@ int bq40z80_read_block(bq40z80_cmd_t cmd, uint8_t *data, uint8_t *len)
 
 /**
  * @brief  SMBus write block
+ * @param  cmd  命令码
+ * @param  data 要写入的数据
+ * @param  len  数据长度
+ * @return 0: 成功, -1: 参数错误/未初始化, -3: 总线通信失败
  */
 int bq40z80_write_block(bq40z80_cmd_t cmd, const uint8_t *data, uint8_t len)
 {
-    uint8_t wr_buf[2 + 32]; /* cmd + count + data */
+    uint8_t wr_buf[34];
     int     ret;
 
     if (!g_initialized || !data || len == 0)

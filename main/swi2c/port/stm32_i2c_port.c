@@ -9,12 +9,25 @@
 /*                              Macros                                      */
 /****************************************************************************/
 
-#ifndef STM32_I2C_PORT_HANDLE
-#define STM32_I2C_PORT_HANDLE    (&hi2c1)
+/* 硬件配置 — 通过编译选项覆盖，无需修改源文件 */
+#ifndef SWI2C_SCL_PORT
+#define SWI2C_SCL_PORT          GPIOB
 #endif
 
-#ifndef STM32_I2C_TIMEOUT_MS
-#define STM32_I2C_TIMEOUT_MS     100
+#ifndef SWI2C_SCL_PIN
+#define SWI2C_SCL_PIN           GPIO_PIN_6
+#endif
+
+#ifndef SWI2C_SDA_PORT
+#define SWI2C_SDA_PORT          GPIOB
+#endif
+
+#ifndef SWI2C_SDA_PIN
+#define SWI2C_SDA_PIN           GPIO_PIN_7
+#endif
+
+#ifndef SWI2C_DELAY_US
+#define SWI2C_DELAY_US          5
 #endif
 
 /****************************************************************************/
@@ -25,10 +38,12 @@
 /*                      Prototypes Of Local Functions                       */
 /****************************************************************************/
 
-static int stm32_i2c_write(uint8_t dev_addr, const uint8_t *data, uint16_t len, uint32_t timeout_ms);
-static int stm32_i2c_read(uint8_t dev_addr, uint8_t *data, uint16_t len, uint32_t timeout_ms);
-static int stm32_i2c_write_read(uint8_t dev_addr, const uint8_t *wr_data, uint16_t wr_len,
-                                 uint8_t *rd_data, uint16_t rd_len, uint32_t timeout_ms);
+static int     swi2c_port_init(void);
+static int     swi2c_port_deinit(void);
+static void    swi2c_port_sda_set(uint8_t level);
+static void    swi2c_port_scl_set(uint8_t level);
+static uint8_t swi2c_port_sda_get(void);
+static void    swi2c_port_delay_us(void);
 
 /****************************************************************************/
 /*                          Global Variables                                */
@@ -38,20 +53,17 @@ static int stm32_i2c_write_read(uint8_t dev_addr, const uint8_t *wr_data, uint16
 /*                          Exported Functions                              */
 /****************************************************************************/
 
-/**
- * @brief  获取 STM32 硬件 I2C 事务级传输接口实例
- * @note   使用 STM32 HAL I2C，句柄由 STM32_I2C_PORT_HANDLE 宏配置（默认 hi2c1）。
- *         调用前需确保 HAL_I2C_Init() 已完成（通常在 CubeMX 生成的初始化代码中）。
- */
-const i2c_transport_t *stm32_i2c_port_get_transport(void)
+const swi2c_driver_t *swi2c_port_get_driver(void)
 {
-    static const i2c_transport_t transport = {
-        .write      = stm32_i2c_write,
-        .read       = stm32_i2c_read,
-        .write_read = stm32_i2c_write_read,
+    static const swi2c_driver_t driver = {
+        .init     = swi2c_port_init,
+        .deinit   = swi2c_port_deinit,
+        .sda_set  = swi2c_port_sda_set,
+        .scl_set  = swi2c_port_scl_set,
+        .sda_get  = swi2c_port_sda_get,
+        .delay_us = swi2c_port_delay_us,
     };
-
-    return &transport;
+    return &driver;
 }
 
 /****************************************************************************/
@@ -59,80 +71,83 @@ const i2c_transport_t *stm32_i2c_port_get_transport(void)
 /****************************************************************************/
 
 /**
- * @brief  硬件 I2C write（HAL 直接模式）
+ * @brief  STM32 GPIO 初始化 — 配置 SCL/SDA 为开漏输出 + 内部上拉
+ * @return 0: 成功
  */
-static int stm32_i2c_write(uint8_t dev_addr, const uint8_t *data, uint16_t len, uint32_t timeout_ms)
+static int swi2c_port_init(void)
 {
-    uint32_t timeout = (timeout_ms != 0) ? timeout_ms : STM32_I2C_TIMEOUT_MS;
+    GPIO_InitTypeDef gpio_init = {0};
 
-    if (HAL_I2C_Master_Transmit(STM32_I2C_PORT_HANDLE,
-                                (uint16_t)(dev_addr << 1),
-                                (uint8_t *)data, (uint16_t)len,
-                                timeout) != HAL_OK)
-    {
-        return -3;
-    }
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    gpio_init.Mode  = GPIO_MODE_OUTPUT_OD;
+    gpio_init.Pull  = GPIO_PULLUP;
+    gpio_init.Speed = GPIO_SPEED_FREQ_LOW;
+
+    gpio_init.Pin = SWI2C_SCL_PIN;
+    HAL_GPIO_Init(SWI2C_SCL_PORT, &gpio_init);
+
+    gpio_init.Pin = SWI2C_SDA_PIN;
+    HAL_GPIO_Init(SWI2C_SDA_PORT, &gpio_init);
+
+    /* 空闲状态：总线置高（开漏释放 + 上拉 → 高电平） */
+    HAL_GPIO_WritePin(SWI2C_SCL_PORT, SWI2C_SCL_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(SWI2C_SDA_PORT, SWI2C_SDA_PIN, GPIO_PIN_SET);
 
     return 0;
 }
 
 /**
- * @brief  硬件 I2C read（HAL 直接模式）
+ * @brief  反初始化 — 释放 GPIO 资源
+ * @return 0: 成功
  */
-static int stm32_i2c_read(uint8_t dev_addr, uint8_t *data, uint16_t len, uint32_t timeout_ms)
+static int swi2c_port_deinit(void)
 {
-    uint32_t timeout = (timeout_ms != 0) ? timeout_ms : STM32_I2C_TIMEOUT_MS;
-
-    if (HAL_I2C_Master_Receive(STM32_I2C_PORT_HANDLE,
-                               (uint16_t)(dev_addr << 1),
-                               data, (uint16_t)len,
-                               timeout) != HAL_OK)
-    {
-        return -3;
-    }
-
+    HAL_GPIO_DeInit(SWI2C_SCL_PORT, SWI2C_SCL_PIN);
+    HAL_GPIO_DeInit(SWI2C_SDA_PORT, SWI2C_SDA_PIN);
     return 0;
 }
 
 /**
- * @brief  硬件 I2C write + repeated start + read（HAL Mem_Read 模式）
- * @note   使用 HAL_I2C_Mem_Read 实现，把 wr_data 当作内存地址发送。
- *         最大支持 2 字节 wr_data（对应 I2C_MEMADD_SIZE_16BIT）。
- *         超过 2 字节时返回 -1。
+ * @brief  设置 SDA 电平
+ * @param  level 0: 低电平, 非零: 高电平（开漏释放）
  */
-static int stm32_i2c_write_read(uint8_t dev_addr, const uint8_t *wr_data, uint16_t wr_len,
-                                 uint8_t *rd_data, uint16_t rd_len, uint32_t timeout_ms)
+static void swi2c_port_sda_set(uint8_t level)
 {
-    uint16_t mem_addr;
-    uint16_t mem_size;
-    uint32_t timeout;
+    HAL_GPIO_WritePin(SWI2C_SDA_PORT, SWI2C_SDA_PIN,
+                      level ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
 
-    if (wr_len == 0 || wr_len > 2)
+/**
+ * @brief  设置 SCL 电平
+ */
+static void swi2c_port_scl_set(uint8_t level)
+{
+    HAL_GPIO_WritePin(SWI2C_SCL_PORT, SWI2C_SCL_PIN,
+                      level ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+/**
+ * @brief  读取 SDA 电平
+ * @return 0: 低电平, 1: 高电平
+ */
+static uint8_t swi2c_port_sda_get(void)
+{
+    return (HAL_GPIO_ReadPin(SWI2C_SDA_PORT, SWI2C_SDA_PIN) == GPIO_PIN_SET) ? 1 : 0;
+}
+
+/**
+ * @brief  微秒级延时（I2C 半周期）
+ * @note   基于 NOP 忙等循环。SystemCoreClock / 4 粗略折算循环体开销。
+ *         精确时序要求高时建议用 DWT 周期计数器替代。
+ */
+static void swi2c_port_delay_us(void)
+{
+    uint32_t count = SWI2C_DELAY_US * (SystemCoreClock / 4000000U);
+    while (count--)
     {
-        return -1;
+        __NOP();
     }
-
-    timeout = (timeout_ms != 0) ? timeout_ms : STM32_I2C_TIMEOUT_MS;
-
-    /* 将 wr_data 拼成大端内存地址 */
-    mem_addr = wr_data[0];
-    if (wr_len == 2)
-    {
-        mem_addr = (uint16_t)((mem_addr << 8) | wr_data[1]);
-    }
-
-    mem_size = (wr_len == 2) ? I2C_MEMADD_SIZE_16BIT : I2C_MEMADD_SIZE_8BIT;
-
-    if (HAL_I2C_Mem_Read(STM32_I2C_PORT_HANDLE,
-                         (uint16_t)(dev_addr << 1),
-                         mem_addr, mem_size,
-                         rd_data, (uint16_t)rd_len,
-                         timeout) != HAL_OK)
-    {
-        return -3;
-    }
-
-    return 0;
 }
 
 /****************************************************************************/
