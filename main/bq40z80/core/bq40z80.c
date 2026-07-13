@@ -35,12 +35,10 @@ static bool                   g_initialized;
 
 /**
  * @brief  初始化 BQ40Z80 模块
- * @param  config BQ40Z80 配置，device_addr 传 0 时使用默认地址 BQ40Z80_DEFAULT_ADDR
- * @return 0: 成功, -1: 参数错误, -2: transport 不完整
+ * @return 0: 成功, -2: transport 不完整或硬件初始化失败
  */
 int bq40z80_init(void)
 {
-
     g_i2c = bq40z80_port_get_i2c();
 
     if (!g_i2c->write || !g_i2c->read || !g_i2c->write_read)
@@ -48,7 +46,16 @@ int bq40z80_init(void)
         return -2;
     }
 
+    if (g_i2c->init)
+    {
+        int ret = g_i2c->init();
+        if (ret != 0)
+        {
+            return ret;
+        }
+    }
 
+    g_config.device_addr = BQ40Z80_DEFAULT_ADDR;
     g_initialized = true;
 
     return 0;
@@ -60,6 +67,11 @@ int bq40z80_init(void)
  */
 int bq40z80_deinit(void)
 {
+    if (g_i2c && g_i2c->deinit)
+    {
+        g_i2c->deinit();
+    }
+
     g_i2c         = NULL;
     g_initialized = false;
     memset(&g_config, 0, sizeof(g_config));
