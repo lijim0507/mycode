@@ -6,11 +6,11 @@
 /****************************************************************************/
 #include <stdint.h>
 #include <stdbool.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include "bq40z80_port.h"
 /****************************************************************************/
 /*                              Macros                                      */
 /****************************************************************************/
@@ -23,7 +23,6 @@ extern "C" {
 /*                              Typedefs                                    */
 /****************************************************************************/
 
-typedef struct i2c_transport i2c_transport_t;
 
 /**
  * @brief  BQ40Z80 SBS / TI 扩展命令码
@@ -90,11 +89,9 @@ typedef struct
 
 /**
  * @brief  初始化 BQ40Z80 模块
- * @param  i2c    I2C 传输接口实例
- * @param  config BQ40Z80 配置，device_addr 传 0 时使用默认地址 BQ40Z80_DEFAULT_ADDR
  * @return 0: 成功, -1: 参数错误, -2: transport 不完整
  */
-int bq40z80_init(const i2c_transport_t *i2c, const bq40z80_config_t *config);
+int bq40z80_init(void);
 
 /**
  * @brief  反初始化 BQ40Z80 模块
