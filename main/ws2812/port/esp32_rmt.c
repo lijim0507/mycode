@@ -1,7 +1,7 @@
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-#include "ws281x_port.h"
+#include "ws2812_port.h"
 
 #include <string.h>
 
@@ -14,15 +14,15 @@
 /*								Macros										*/
 /****************************************************************************/
 
-#ifndef WS281X_ESP32_GPIO_NUM
-#define WS281X_ESP32_GPIO_NUM       GPIO_NUM_2
+#ifndef WS2812_ESP32_GPIO_NUM
+#define WS2812_ESP32_GPIO_NUM       GPIO_NUM_2
 #endif
 
 /* RMT 时钟分辨率：10MHz → 100ns/tick */
-#define WS281X_RMT_RESOLUTION_HZ  (10 * 1000 * 1000)
+#define WS2812_RMT_RESOLUTION_HZ  (10 * 1000 * 1000)
 
 /*
- * WS281X 时序参数 (@10MHz → 100ns/tick):
+ * WS2812 时序参数 (@10MHz → 100ns/tick):
  *   T0H: 220~380 ns  → 4 ticks (400 ns)
  *   T0L: 580~1000 ns → 8 ticks (800 ns)
  *   T1H: 580~1000 ns → 7 ticks (700 ns)
@@ -30,20 +30,20 @@
  *
  * 以上数值均在 WS2812B 规格范围内，实际使用示波器验证。
  */
-#ifndef WS281X_RMT_T0H_TICKS
-#define WS281X_RMT_T0H_TICKS  4
+#ifndef WS2812_RMT_T0H_TICKS
+#define WS2812_RMT_T0H_TICKS  4
 #endif
 
-#ifndef WS281X_RMT_T0L_TICKS
-#define WS281X_RMT_T0L_TICKS  8
+#ifndef WS2812_RMT_T0L_TICKS
+#define WS2812_RMT_T0L_TICKS  8
 #endif
 
-#ifndef WS281X_RMT_T1H_TICKS
-#define WS281X_RMT_T1H_TICKS  7
+#ifndef WS2812_RMT_T1H_TICKS
+#define WS2812_RMT_T1H_TICKS  7
 #endif
 
-#ifndef WS281X_RMT_T1L_TICKS
-#define WS281X_RMT_T1L_TICKS  6
+#ifndef WS2812_RMT_T1L_TICKS
+#define WS2812_RMT_T1L_TICKS  6
 #endif
 
 /*
@@ -114,24 +114,26 @@ static bool IRAM_ATTR rmt_tx_done_cb(rmt_channel_handle_t tx_chan,
  * @brief  ESP32 RMT 硬件初始化
  * @return 0: 成功, -1: 信号量创建失败, -2: RMT 通道创建失败,
  *         -3: 编码器创建失败, -4: RMT 使能失败
- * @note   GPIO 通过 WS281X_ESP32_GPIO_NUM 宏定义指定
+ * @note   GPIO 通过 WS2812_ESP32_GPIO_NUM 宏定义指定
  */
 static int esp32_rmt_init(void)
 {
-    gpio_num_t gpio_num = WS281X_ESP32_GPIO_NUM;
+    gpio_num_t gpio_num = WS2812_ESP32_GPIO_NUM;
 
     g_rmt_ctx.gpio_num = gpio_num;
 
+    /* 创建发送完成信号量 */
     g_rmt_ctx.tx_sem = xSemaphoreCreateBinary();
     if (!g_rmt_ctx.tx_sem)
     {
         return -1;
     }
 
+    /* 配置并创建 RMT TX 通道 */
     rmt_tx_channel_config_t tx_chan_cfg = {
         .gpio_num = gpio_num,
         .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = WS281X_RMT_RESOLUTION_HZ,
+        .resolution_hz = WS2812_RMT_RESOLUTION_HZ,
         .mem_block_symbols = 64,
         .trans_queue_depth = 4,
         .flags.with_dma = false,
@@ -144,22 +146,24 @@ static int esp32_rmt_init(void)
         return -2;
     }
 
+    /* 注册发送完成回调 */
     rmt_tx_event_callbacks_t cbs = {
         .on_trans_done = rmt_tx_done_cb,
     };
     rmt_tx_register_event_callbacks(g_rmt_ctx.tx_channel, &cbs, NULL);
 
+    /* 创建字节编码器：将字节数据映射为 WS2812 时序的 RMT 符号 */
     rmt_bytes_encoder_config_t bytes_enc_cfg = {
         .bit0 = {
-            .duration0 = WS281X_RMT_T0H_TICKS,
+            .duration0 = WS2812_RMT_T0H_TICKS,
             .level0    = 1,
-            .duration1 = WS281X_RMT_T0L_TICKS,
+            .duration1 = WS2812_RMT_T0L_TICKS,
             .level1    = 0,
         },
         .bit1 = {
-            .duration0 = WS281X_RMT_T1H_TICKS,
+            .duration0 = WS2812_RMT_T1H_TICKS,
             .level0    = 1,
-            .duration1 = WS281X_RMT_T1L_TICKS,
+            .duration1 = WS2812_RMT_T1L_TICKS,
             .level1    = 0,
         },
         .flags.msb_first = 1,
@@ -172,6 +176,7 @@ static int esp32_rmt_init(void)
         return -3;
     }
 
+    /* 使能 RMT TX 通道 */
     ret = rmt_enable(g_rmt_ctx.tx_channel);
     if (ret != ESP_OK)
     {
@@ -186,7 +191,7 @@ static int esp32_rmt_init(void)
 }
 
 /**
- * @brief  通过 RMT 发送已编码的 WS281X 数据
+ * @brief  通过 RMT 发送已编码的 WS2812 数据
  * @param  data 编码后的发送缓冲区（GRB 字节流）
  * @param  len  数据长度（字节数）
  * @return 0: 成功, -1: 发送启动失败
@@ -253,11 +258,11 @@ static int esp32_rmt_deinit(void)
 
 /**
  * @brief  获取 ESP32 RMT 驱动实例
- * @return ws281x_driver_t 结构体指针
+ * @return ws2812_driver_t 结构体指针
  */
-const ws281x_driver_t *ws281x_port_get_driver(void)
+const ws2812_driver_t *ws2812_port_get_driver(void)
 {
-    static const ws281x_driver_t driver = {
+    static const ws2812_driver_t driver = {
         .init      = esp32_rmt_init,
         .transmit  = esp32_rmt_transmit,
         .is_busy   = esp32_rmt_is_busy,

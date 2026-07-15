@@ -1,9 +1,9 @@
-#ifndef __WS281X_PORT_H_
-#define __WS281X_PORT_H_
+#ifndef __WS2812_PORT_H_
+#define __WS2812_PORT_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-#include "ws281x.h"
+#include "ws2812.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,19 +17,6 @@ extern "C" {
 /*								Typedefs									*/
 /****************************************************************************/
 
-/**
- * @brief  WS281X 硬件驱动抽象接口
- * @note   每个平台只需实现这四个函数指针即可完成移植。
- *         core 层通过 ws281x_port_get_driver() 获取驱动实例，
- *         不关心具体硬件实现。
- */
-typedef struct ws281x_driver {
-    int (*init)(void);
-    int (*transmit)(const uint8_t *data, uint32_t len);
-    int (*is_busy)(void);
-    int (*deinit)(void);
-} ws281x_driver_t;
-
 /****************************************************************************/
 /*						Exproted Variables									*/
 /****************************************************************************/
@@ -39,11 +26,11 @@ typedef struct ws281x_driver {
 /****************************************************************************/
 
 /**
- * @brief  获取当前平台的 WS281X 硬件驱动实例
+ * @brief  获取当前平台的 WS2812 硬件驱动实例
  * @return 驱动实例指针，调用失败返回 NULL
  * @note   根据编译时选中的 port/*.c 文件返回对应的驱动实现
  */
-const ws281x_driver_t *ws281x_port_get_driver(void);
+const ws2812_driver_t *ws2812_port_get_driver(void);
 
 #ifdef __cplusplus
 }
