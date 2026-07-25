@@ -24,7 +24,7 @@ win — this file is a quick index, they are the spec.
 
 ## Module architecture (three layers)
 
-Every module lives under `main/<module>/` with:
+Every module lives under `modules/<module>/` with:
 
 ```
 include/   public API, types, handle/config typedefs, the driver struct typedef
@@ -51,28 +51,20 @@ hardware params. Callers (main.c, upper modules) must not know port hardware det
 
 Legacy modules still use `void *port_cfg` — leave them as-is; do not migrate unless asked.
 
-## Build system reality
+## Module list
 
-`main/CMakeLists.txt` is a **demonstration build** that wires up only a subset of modules
-(ws2812, swi2c, eeprom, imu, key, uds, can_simple + a `board/` shim). Most modules in `main/`
-are **not in the build** and have intentionally inconsistent paths:
-- The directory was renamed `ws2812/` → `ws281x/` to support the whole WS281x family, but
-  `CMakeLists.txt` and some references still say `ws2812`. When editing ws281x, keep the new
-  `ws281x` names in code; the stale CMake paths are a known demo-build artifact.
-- `main.c` contains demo/placeholder code (`app_main` just prints, `semaphore_operate` /
-  `queue_operate` reference handles that don't all exist). Don't treat `main.c` as the source
-  of truth for module wiring.
+All modules live flat under `modules/`, each following the three-layer structure above:
+`at`, `ble`, `bq40z80`, `can_diag` (containing `isotp` and `uds`), `can_simple`, `eeprom`,
+`foc`, `imu`, `key`, `log-lib`, `mqtt`, `swi2c`, `uart`, `udisk`, `utility`, `ws2812`.
 
-The top-level `CMakeLists.txt` uses `idf_build_set_property(MINIMAL_BUILD ON)`. Building (if
-ever needed) is via ESP-IDF: `idf.py build` / `idf.py -p <PORT> flash monitor`, configured with
-`idf.py menuconfig`. A `.devcontainer/` provides an ESP-IDF QEMU image, and `.vscode/` sets
-`idf.pythonInstallPath`.
+`modules/main.c` and `modules/main.h` are **not** a module — they are reference code for the
+service-table pattern (`semaphore_operate` / `queue_operate` + FreeRTOS CPU monitor). They
+reference handles that don't all exist; treat them as a wiring template, not live code.
 
-## Nested repo note
-
-`main/log-lib/` is its own git repository (has its own `.git/`). Treat it as a vendored
-submodule-like dependency: edit its files directly, but be aware git operations on the outer
-repo will see it as an untracked directory, not tracked files.
+There is no build system, no CMakeLists.txt, no partition table. Each module is meant to be
+copied into a real project individually. Building (if ever needed for a real project) is via
+ESP-IDF: `idf.py build` / `idf.py -p <PORT> flash monitor`. A `.devcontainer/` provides an
+ESP-IDF QEMU image, and `.vscode/` sets `idf.pythonInstallPath`.
 
 ## Editing rules
 
