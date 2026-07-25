@@ -93,3 +93,17 @@ repo will see it as an untracked directory, not tracked files.
 - **No external deps.** Only the C standard library and ESP-IDF/FreeRTOS headers.
 - **Don't break existing APIs.** Legacy modules may have camelCase members or `void *config`
   signatures — preserve them; only new code follows the current rules.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for this repo, managed via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles use their default label names: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
