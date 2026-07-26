@@ -63,16 +63,16 @@ static const ws2812_rgb_t g_color_table[WS2812_COLOR_NUM] = {
  * @param  g     输出绿色分量
  * @param  b     输出蓝色分量
  */
-void ws2812_color_get_rgb(ws2812_color_t color, ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_t *b)
+void ws2812_color_get_rgb(ws2812_color_t color, ws2812_pixel_t *r, ws2812_pixel_t *g, ws2812_pixel_t *b)
 {
     if (color >= WS2812_COLOR_NUM)
     {
         color = WS2812_COLOR_OFF;
     }
 
-    *r = ws281x_expand_8bit(g_color_table[color].r);
-    *g = ws281x_expand_8bit(g_color_table[color].g);
-    *b = ws281x_expand_8bit(g_color_table[color].b);
+    *r = ws2812_expand_8bit(g_color_table[color].r);
+    *g = ws2812_expand_8bit(g_color_table[color].g);
+    *b = ws2812_expand_8bit(g_color_table[color].b);
 }
 
 /**
@@ -82,15 +82,15 @@ void ws2812_color_get_rgb(ws2812_color_t color, ws281x_pixel_t *r, ws281x_pixel_
  * @param  b          蓝色分量输入/输出
  * @param  brightness 亮度值 (0~255)
  */
-void ws2812_apply_brightness(ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_t *b, uint8_t brightness)
+void ws2812_apply_brightness(ws2812_pixel_t *r, ws2812_pixel_t *g, ws2812_pixel_t *b, uint8_t brightness)
 {
     if (brightness == 255)
     {
         return;
     }
-    *r = (ws281x_pixel_t)(((uint32_t)*r * brightness) / 255U);
-    *g = (ws281x_pixel_t)(((uint32_t)*g * brightness) / 255U);
-    *b = (ws281x_pixel_t)(((uint32_t)*b * brightness) / 255U);
+    *r = (ws2812_pixel_t)(((uint32_t)*r * brightness) / 255U);
+    *g = (ws2812_pixel_t)(((uint32_t)*g * brightness) / 255U);
+    *b = (ws2812_pixel_t)(((uint32_t)*b * brightness) / 255U);
 }
 
 /**
@@ -103,7 +103,7 @@ void ws2812_apply_brightness(ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_
  * @param  b  输出蓝色分量
  */
 void ws2812_hsv2rgb(uint16_t h, uint8_t s, uint8_t v,
-                     ws281x_pixel_t *r, ws281x_pixel_t *g, ws281x_pixel_t *b)
+                     ws2812_pixel_t *r, ws2812_pixel_t *g, ws2812_pixel_t *b)
 {
     uint8_t region, p, q, t;
     uint16_t remainder;
@@ -111,9 +111,9 @@ void ws2812_hsv2rgb(uint16_t h, uint8_t s, uint8_t v,
 
     if (s == 0)
     {
-        *r = ws281x_expand_8bit(v);
-        *g = ws281x_expand_8bit(v);
-        *b = ws281x_expand_8bit(v);
+        *r = ws2812_expand_8bit(v);
+        *g = ws2812_expand_8bit(v);
+        *b = ws2812_expand_8bit(v);
         return;
     }
 
@@ -135,9 +135,9 @@ void ws2812_hsv2rgb(uint16_t h, uint8_t s, uint8_t v,
         default: r8 = v; g8 = p; b8 = q; break;
     }
 
-    *r = ws281x_expand_8bit(r8);
-    *g = ws281x_expand_8bit(g8);
-    *b = ws281x_expand_8bit(b8);
+    *r = ws2812_expand_8bit(r8);
+    *g = ws2812_expand_8bit(g8);
+    *b = ws2812_expand_8bit(b8);
 }
 
 /****************************************************************************/

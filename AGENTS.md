@@ -7,28 +7,27 @@
 ## 项目结构
 
 ```
-main/
+modules/
 ├── at/                     # AT 指令 (SIM800/4G 蜂窝模组 UART)
 ├── ble/                    # BLE 蓝牙 (NimBLE GATT 外设)
-├── can_simple/             # CAN 总线 (ODrive/SimpleFOC 电机控制协议)
-├── diag/                   # 汽车诊断协议栈
+├── bq40z80/                # BQ40Z80 电池电量计 (SMBus over I2C)
+├── can_diag/               # 汽车诊断协议栈
 │   ├── isotp/              #   ISO 15765-2 传输层 (CAN 上的 ISO-TP)
 │   └── uds/                #   ISO 14229 应用层 (UDS 诊断服务, 基于 ISO-TP)
-├── eeprom/                 # EEPROM (I2C 24Cxx & SPI 25LCxx 抽象驱动)
+├── eeprom/                 # EEPROM (I2C 24Cxx, 基于 i2c_transport_t)
 ├── foc/                    # FOC 数学库 (Clarke/Park 坐标变换)
 ├── imu/                    # IMU 惯性测量 (ICM-42688-P, SPI)
 ├── key/                    # 按键检测 (单击/双击/长按, 多平台移植)
-├── log-lib/                # 日志库 (多平台移植)
-├── mqtt/                   # MQTT 客户端 (SIM800 蜂窝 / WiFi)
-├── swi2c/                  # 软件 I2C (GPIO 模拟)
-├── swi2c and eeprom driver/ # [旧版] SWI2C + EEPROM 一体化驱动
+├── log-lib/                # 日志库 (printf/分级/缓冲/回调)
+├── mqtt/                   # MQTT 客户端 (SIM800 蜂窝, 待完善)
+├── odrive_can/             # ODrive 电机控制 CAN 协议 (轴状态/位置/速度/转矩)
+├── swi2c/                  # 软件 I2C (GPIO 模拟, 提供 i2c_transport_t)
+├── uart/                   # 通用帧解析器 (待完善)
 ├── udisk/                  # USB Host 优盘存储 (FatFS 数据记录)
-├── uart/                     # 通用帧解析器 (复制改格式检测即可适配新协议)
 ├── utility/                # 通用工具函数 (数值钳位、类型转换)
 ├── ws2812/                 # WS2812 可寻址 RGB LED 灯带
-├── main.h                  # RTOS 信号量/队列统一接口
-├── main.c                  # 主入口 (FreeRTOS)
-└── CMakeLists.txt          # 顶层构建配置
+├── main.h                  # RTOS 信号量/队列统一接口 (参考代码)
+└── main.c                  # FreeRTOS CPU 监控 + service-table 模式参考
 ```
 
 每个模块内部遵循 `include/` — `core/` — `port/` 的三层结构（详见下方 "代码架构风格" 章节）。
@@ -57,7 +56,7 @@ module_name/
 1. 在 `port/xxx_port.h` 中定义函数指针结构体作为硬件抽象接口
 2. 每个 `port/xxx_platform.c` 实现该接口的所有函数
 3. 提供一个 `xxx_port_get_driver()` 函数，返回填充好的驱动实例指针
-4. Core 层通过 `xxx_init(driver, ...)` 注入驱动实例
+4. Core 层在 `xxx_init()` 内部调用 `xxx_port_get_driver()` 获取驱动实例，调用方不感知硬件细节
 5. 模块状态使用 `g_` 前缀的静态全局变量在 core 层统一管理
 
 ### Port 层 init 函数自封装规则

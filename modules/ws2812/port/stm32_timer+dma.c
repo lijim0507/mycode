@@ -123,8 +123,8 @@ static int stm32_timer_dma_deinit(void);
 /****************************************************************************/
 
 static stm32_timer_dma_ctx_t g_stm32;
-#define WS281X_DMA_BUF_WORDS  (WS2812_MAX_LEDS * WS281X_BITS_PER_LED + WS281X_FRAME_HEADER_BITS + WS281X_RESET_CYCLES)
-static uint16_t g_dma_buf[WS281X_DMA_BUF_WORDS];
+#define WS2812_DMA_BUF_WORDS  (WS2812_MAX_LEDS * WS2812_BITS_PER_LED + WS2812_FRAME_HEADER_BITS + WS2812_RESET_CYCLES)
+static uint16_t g_dma_buf[WS2812_DMA_BUF_WORDS];
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
@@ -162,7 +162,7 @@ static int stm32_timer_dma_init(void)
     g_stm32.htim        = WS2812_STM32_TIM_HANDLE;
     g_stm32.tim_channel = WS2812_STM32_TIM_CHANNEL;
 
-    g_stm32.buf_capacity = WS2812_MAX_LEDS * WS281X_BITS_PER_LED + WS281X_FRAME_HEADER_BITS + WS281X_RESET_CYCLES;
+    g_stm32.buf_capacity = WS2812_MAX_LEDS * WS2812_BITS_PER_LED + WS2812_FRAME_HEADER_BITS + WS2812_RESET_CYCLES;
     g_stm32.dma_buf = g_dma_buf;
 
     //-------------------------------------------------------

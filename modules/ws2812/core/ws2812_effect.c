@@ -79,7 +79,7 @@ void ws2812_effect_rainbow(uint8_t speed, uint8_t brightness)
     uint32_t num_leds;
     uint32_t i;
     uint16_t hue;
-    ws281x_pixel_t r, g, b;
+    ws2812_pixel_t r, g, b;
 
     num_leds = ws2812_get_num_leds();
     if (num_leds == 0)

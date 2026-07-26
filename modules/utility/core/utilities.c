@@ -1,26 +1,28 @@
 /****************************************************************************/
-/*								Includes									*/
+/*                              Includes                                    */
 /****************************************************************************/
 #include "utilities.h"
+
 /****************************************************************************/
-/*								Macros										*/
+/*                              Macros                                      */
 /****************************************************************************/
 
 /****************************************************************************/
-/*								Typedefs									*/
+/*                              Typedefs                                    */
 /****************************************************************************/
 
 /****************************************************************************/
-/*						Prototypes Of Local Functions						*/
+/*                      Prototypes Of Local Functions                       */
 /****************************************************************************/
 
 /****************************************************************************/
-/*							Global Variables								*/
+/*                          Global Variables                                */
 /****************************************************************************/
 
 /****************************************************************************/
-/*							Exported Functions    						    */
+/*                          Exported Functions                              */
 /****************************************************************************/
+
 /**
  * @brief 浮点数范围限制
  * @param value 输入的浮点数值
@@ -28,7 +30,7 @@
  * @param max 最大值
  * @return float 限制后的浮点数值
  */
-static float clamp_float(float value, float min, float max)
+float clamp_float(float value, float min, float max)
 {
     if (value > max)
     {
@@ -50,7 +52,7 @@ static float clamp_float(float value, float min, float max)
  * @param x_max 浮点数的最大值
  * @return int16_t 转换后的16位有符号整数
  */
-static int16_t float_to_int16(float x, float x_min, float x_max)
+int16_t float_to_int16(float x, float x_min, float x_max)
 {
     float span = x_max - x_min;
     float scale;
@@ -76,7 +78,7 @@ static int16_t float_to_int16(float x, float x_min, float x_max)
  * @param x_max 浮点数的最大值
  * @return int8_t 转换后的8位有符号整数
  */
-static int8_t float_to_int8(float x, float x_min, float x_max)
+int8_t float_to_int8(float x, float x_min, float x_max)
 {
     float span = x_max - x_min;
     float scale;
@@ -96,10 +98,9 @@ static int8_t float_to_int8(float x, float x_min, float x_max)
 }
 
 /****************************************************************************/
-/*							Static Functions    						    */
+/*                          Static Functions                                */
 /****************************************************************************/
 
 /****************************************************************************/
-/*								EOF											*/
+/*                              EOF                                         */
 /****************************************************************************/
-

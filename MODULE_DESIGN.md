@@ -35,9 +35,9 @@ module_name/
 示例：
 
 - `eeprom/include/eeprom.h`
-- `diag/isotp/include/isotp.h`
+- `can_diag/isotp/include/isotp.h`
 - `key/include/key.h`
-- `ws281x/include/ws281x.h`
+- `ws2812/include/ws2812.h`
 
 ### core 层
 
@@ -79,10 +79,14 @@ typedef struct
 } xxx_driver_t;
 ```
 
-Core 初始化时注入 driver：
+Core 初始化时在内部获取 driver：
 
 ```c
-int xxx_init(const xxx_driver_t *driver, const xxx_config_t *config);
+int xxx_init(const xxx_config_t *config)
+{
+    g_driver = xxx_port_get_driver();
+    // 校验 driver、初始化硬件...
+}
 ```
 
 Core 保存 driver 指针：
@@ -94,6 +98,12 @@ static bool g_initialized;
 
 之后所有硬件访问都通过 `g_driver->xxx()` 完成。
 
+调用方（main.c 或上层模块）只需：
+
+```c
+xxx_init(&config);  // 不传入 driver，port 选择在编译期决定
+```
+
 适用模块：
 
 - `swi2c`
@@ -101,6 +111,9 @@ static bool g_initialized;
 - `ble`
 - `foc`
 - `isotp`
+- `bq40z80`
+- `ws2812`
+- `odrive_can`
 
 ## 4. Port Driver Getter 模式
 
@@ -121,13 +134,18 @@ const xxx_driver_t *xxx_port_get_driver(void)
 }
 ```
 
-上层使用：
+上层使用（core 在 init 内部调用 getter，而非由调用方传入）：
 
 ```c
-xxx_init(xxx_port_get_driver(), config);
+// core/xxx.c
+int xxx_init(const xxx_config_t *config)
+{
+    const xxx_driver_t *driver = xxx_port_get_driver();
+    // ...
+}
 ```
 
-这种方式让应用层只依赖模块 API，不需要知道具体平台函数名。
+这种方式让应用层只依赖模块 API，不需要知道具体平台函数名或 port getter。
 
 ## 5. Port 自封装硬件配置
 
@@ -211,7 +229,7 @@ EEPROM 模块通过 `i2c_transport_t` 使用 I2C，不直接依赖 SWI2C 的内�
 典型例子：
 
 - `isotp_handle_t`
-- `ws281x_handle_t`
+- `ws2812_handle_t`
 - `key_t`
 
 ### 调用方分配对象
@@ -231,10 +249,10 @@ key_init(&key);
 
 ### 模块返回不透明句柄
 
-`ws281x_handle_t` 属于不透明句柄：
+`ws2812_handle_t` 属于不透明句柄：
 
 ```c
-typedef struct ws281x_dev *ws281x_handle_t;
+typedef struct ws2812_dev *ws2812_handle_t;
 ```
 
 特点：

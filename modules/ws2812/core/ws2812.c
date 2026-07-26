@@ -26,7 +26,7 @@
 
 static const ws2812_driver_t *g_driver;
 
-static ws281x_pixel_t   g_pixel_buf[WS2812_MAX_LEDS * WS281X_CH_PER_LED];   //最大灯珠数 * 每颗灯珠的通道数，不代表实际使用的灯珠数量缓存
+static ws2812_pixel_t   g_pixel_buf[WS2812_MAX_LEDS * WS2812_CH_PER_LED];   //最大灯珠数 * 每颗灯珠的通道数，不代表实际使用的灯珠数量缓存
 static uint16_t         g_buf_len;      //根据设置灯珠数量计算的缓冲区长度
 static uint32_t         g_num_leds;
 static bool             g_initialized;
@@ -60,7 +60,7 @@ int ws2812_init(uint32_t num_leds)
     }
 
     g_num_leds = num_leds;
-    g_buf_len = g_num_leds * WS281X_BYTES_PER_LED ;
+    g_buf_len = g_num_leds * WS2812_BYTES_PER_LED ;
 
     memset(g_pixel_buf, 0, sizeof(g_pixel_buf));
 
@@ -105,15 +105,15 @@ int ws2812_deinit(void)
  * @param  b     蓝色分量
  * @param  brightness 亮度 (0.0~1.0)
  */
-void ws2812_set_pixel(uint32_t index, ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b, float brightness)
+void ws2812_set_pixel(uint32_t index, ws2812_pixel_t r, ws2812_pixel_t g, ws2812_pixel_t b, float brightness)
 {
     if (!g_initialized || index >= g_num_leds)
     {
         return;
     }
-    g_pixel_buf[index * 3 + 0] = (ws281x_pixel_t)((float)g * brightness);
-    g_pixel_buf[index * 3 + 1] = (ws281x_pixel_t)((float)r * brightness);
-    g_pixel_buf[index * 3 + 2] = (ws281x_pixel_t)((float)b * brightness);
+    g_pixel_buf[index * 3 + 0] = (ws2812_pixel_t)((float)g * brightness);
+    g_pixel_buf[index * 3 + 1] = (ws2812_pixel_t)((float)r * brightness);
+    g_pixel_buf[index * 3 + 2] = (ws2812_pixel_t)((float)b * brightness);
 }
 
 /**
@@ -122,7 +122,7 @@ void ws2812_set_pixel(uint32_t index, ws281x_pixel_t r, ws281x_pixel_t g, ws281x
  * @param  g 绿色分量
  * @param  b 蓝色分量
  */
-void ws2812_set_all(ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b, float brightness)
+void ws2812_set_all(ws2812_pixel_t r, ws2812_pixel_t g, ws2812_pixel_t b, float brightness)
 {
     if (!g_initialized)
     {
@@ -142,7 +142,7 @@ void ws2812_set_all(ws281x_pixel_t r, ws281x_pixel_t g, ws281x_pixel_t b, float 
  */
 void ws2812_set_pixel_color(uint32_t index, ws2812_color_t color, float brightness)
 {
-    ws281x_pixel_t r, g, b;
+    ws2812_pixel_t r, g, b;
     ws2812_color_get_rgb(color, &r, &g, &b);
     ws2812_set_pixel(index, r, g, b, brightness);
 }
@@ -153,7 +153,7 @@ void ws2812_set_pixel_color(uint32_t index, ws2812_color_t color, float brightne
  */
 void ws2812_set_all_color(ws2812_color_t color, float brightness)
 {
-    ws281x_pixel_t r, g, b;
+    ws2812_pixel_t r, g, b;
     ws2812_color_get_rgb(color, &r, &g, &b);
     ws2812_set_all(r, g, b, brightness);
 }

@@ -54,7 +54,7 @@ Legacy modules still use `void *port_cfg` — leave them as-is; do not migrate u
 ## Module list
 
 All modules live flat under `modules/`, each following the three-layer structure above:
-`at`, `ble`, `bq40z80`, `can_diag` (containing `isotp` and `uds`), `can_simple`, `eeprom`,
+`at`, `ble`, `bq40z80`, `can_diag` (containing `isotp` and `uds`), `odrive_can`, `eeprom`,
 `foc`, `imu`, `key`, `log-lib`, `mqtt`, `swi2c`, `uart`, `udisk`, `utility`, `ws2812`.
 
 `modules/main.c` and `modules/main.h` are **not** a module — they are reference code for the

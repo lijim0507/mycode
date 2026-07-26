@@ -1,6 +1,6 @@
 
-#ifndef __CAN_SIMPLE_H_
-#define __CAN_SIMPLE_H_
+#ifndef __ODRIVE_CAN_H_
+#define __ODRIVE_CAN_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
@@ -82,12 +82,12 @@ extern "C" {
 /*								Typedefs									*/
 /****************************************************************************/
 
-typedef struct can_simple_driver {
+typedef struct odrive_can_driver {
     int  (*init)(void *config);
     int  (*send)(uint16_t id, const uint8_t *data, uint8_t len);
     int  (*recv)(uint16_t *id, uint8_t *data, uint8_t *len, uint32_t timeout_ms);
     int  (*deinit)(void);
-} can_simple_driver_t;
+} odrive_can_driver_t;
 
 /****************************************************************************/
 /*						Exproted Variables								*/
@@ -97,22 +97,22 @@ typedef struct can_simple_driver {
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-int  can_simple_init(const can_simple_driver_t *driver, void *port_cfg);
-int  can_simple_deinit(void);
+int  odrive_can_init(const odrive_can_driver_t *driver, void *port_cfg);
+int  odrive_can_deinit(void);
 
-void can_simple_set_axis_state(uint8_t node_id, uint8_t axis_state);
-void can_simple_set_ctrl_mode(uint8_t node_id, uint8_t ctrl_mode, uint8_t input_mode);
-void can_simple_set_input_pos(uint8_t node_id, float pos, int16_t vel_ff, int16_t torque_ff);
-void can_simple_set_input_vel(uint8_t node_id, float vel, float torque_ff);
-void can_simple_set_input_torque(uint8_t node_id, float torque);
-void can_simple_set_vel_limit(uint8_t node_id, float vel_limit);
-void can_simple_set_traj_vel_limit(uint8_t node_id, float traj_vel_limit);
-void can_simple_set_traj_accel_limit(uint8_t node_id, float traj_accel_limit, float traj_decel_limit);
-void can_simple_set_pos_gain(uint8_t node_id, float pos_gain);
-void can_simple_set_vel_gains(uint8_t node_id, float vel_gain, float vel_integrator_gain);
-void can_simple_reboot(uint8_t node_id);
-void can_simple_clear_errors(uint8_t node_id);
-void can_simple_estop(uint8_t node_id);
+void odrive_can_set_axis_state(uint8_t node_id, uint8_t axis_state);
+void odrive_can_set_ctrl_mode(uint8_t node_id, uint8_t ctrl_mode, uint8_t input_mode);
+void odrive_can_set_input_pos(uint8_t node_id, float pos, int16_t vel_ff, int16_t torque_ff);
+void odrive_can_set_input_vel(uint8_t node_id, float vel, float torque_ff);
+void odrive_can_set_input_torque(uint8_t node_id, float torque);
+void odrive_can_set_vel_limit(uint8_t node_id, float vel_limit);
+void odrive_can_set_traj_vel_limit(uint8_t node_id, float traj_vel_limit);
+void odrive_can_set_traj_accel_limit(uint8_t node_id, float traj_accel_limit, float traj_decel_limit);
+void odrive_can_set_pos_gain(uint8_t node_id, float pos_gain);
+void odrive_can_set_vel_gains(uint8_t node_id, float vel_gain, float vel_integrator_gain);
+void odrive_can_reboot(uint8_t node_id);
+void odrive_can_clear_errors(uint8_t node_id);
+void odrive_can_estop(uint8_t node_id);
 
 #ifdef __cplusplus
 }

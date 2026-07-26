@@ -1,7 +1,7 @@
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
-#include "can_simple_port.h"
+#include "odrive_can_port.h"
 
 #include <string.h>
 
@@ -12,8 +12,8 @@
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
-#define CAN_SIMPLE_TX_TIMEOUT_MS  100
-#define CAN_SIMPLE_RX_TIMEOUT_MS  100
+#define ODRIVE_CAN_TX_TIMEOUT_MS  100
+#define ODRIVE_CAN_RX_TIMEOUT_MS  100
 /****************************************************************************/
 /*								Typedefs									*/
 /****************************************************************************/
@@ -23,11 +23,11 @@ typedef struct {
     twai_filter_config_t  filter;
     uint8_t               tx_gpio;
     uint8_t               rx_gpio;
-} can_simple_esp32_cfg_t;
+} odrive_can_esp32_cfg_t;
 
 typedef struct {
     bool initialized;
-} can_simple_esp32_ctx_t;
+} odrive_can_esp32_ctx_t;
 
 /****************************************************************************/
 /*						Prototypes Of Local Functions						*/
@@ -41,14 +41,14 @@ static int  esp32_can_deinit(void);
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
-static can_simple_esp32_ctx_t g_can_ctx;
+static odrive_can_esp32_ctx_t g_can_ctx;
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
 
 static int esp32_can_init(void *config)
 {
-    can_simple_esp32_cfg_t *cfg = (can_simple_esp32_cfg_t *)config;
+    odrive_can_esp32_cfg_t *cfg = (odrive_can_esp32_cfg_t *)config;
     twai_general_config_t g_cfg;
     twai_timing_config_t  t_cfg;
     twai_filter_config_t  f_cfg;
@@ -105,7 +105,7 @@ static int esp32_can_send(uint16_t id, const uint8_t *data, uint8_t len)
         memcpy(tx_msg.data, data, tx_msg.data_length_code);
     }
 
-    if (twai_transmit(&tx_msg, pdMS_TO_TICKS(CAN_SIMPLE_TX_TIMEOUT_MS)) != ESP_OK) {
+    if (twai_transmit(&tx_msg, pdMS_TO_TICKS(ODRIVE_CAN_TX_TIMEOUT_MS)) != ESP_OK) {
         return -2;
     }
 
@@ -153,9 +153,9 @@ static int esp32_can_deinit(void)
 /*							Exported Functions    						    */
 /****************************************************************************/
 
-const can_simple_driver_t *can_simple_port_get_driver(void)
+const odrive_can_driver_t *odrive_can_port_get_driver(void)
 {
-    static const can_simple_driver_t driver = {
+    static const odrive_can_driver_t driver = {
         .init   = esp32_can_init,
         .send   = esp32_can_send,
         .recv   = esp32_can_recv,
