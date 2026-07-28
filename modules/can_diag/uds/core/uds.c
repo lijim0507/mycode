@@ -186,6 +186,9 @@ void uds_process(void)
     (void)memset(&g_request,  0, sizeof(g_request));
     (void)memset(&g_response, 0, sizeof(g_response));
 
+    /* handler 直接写入 g_uds_send_buf[1..]，SID 预留在 [0] */
+    g_response.data_ptr = g_uds_send_buf + 1;
+
     switch (expected_type)
     {
         case UDS_SERVICE_TYPE_SID_ONLY:
@@ -270,15 +273,9 @@ void uds_process(void)
     }
 
     {
-        uint16_t send_len = 1 + g_response.data_len;
-
+        /* handler 已写 payload 到 g_uds_send_buf[1..]，补上 SID 直接发送 */
         g_uds_send_buf[0] = g_response.sid;
-        if (g_response.data_len > 0)
-        {
-            (void)memcpy(&g_uds_send_buf[1], g_response.data, g_response.data_len);
-        }
-
-        uds_send_response(g_uds_send_buf, send_len);
+        uds_send_response(g_uds_send_buf, 1 + g_response.data_len);
     }
 }
 

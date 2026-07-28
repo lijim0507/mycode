@@ -127,6 +127,7 @@ typedef enum
     UDS_SERVICE_ID_RESERVED_MAX = 0x40,
 } uds_service_id_t;
 
+//接收的请求结构体
 typedef struct
 {
     uint8_t       sid;
@@ -135,11 +136,12 @@ typedef struct
     const uint8_t *data_ptr;
 } uds_request_t;
 
+//需要发送的响应结构体
 typedef struct
 {
     uint8_t  sid;
     uint16_t data_len;
-    uint8_t  data[UDS_BUF_SIZE];
+    uint8_t *data_ptr;
 } uds_response_t;
 
 typedef uds_handler_result_t (*uds_service_handler_t)(uds_request_t *req, uds_response_t *resp);

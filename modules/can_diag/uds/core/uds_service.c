@@ -122,7 +122,7 @@ uds_handler_result_t uds_diag_session_control(uds_request_t *req, uds_response_t
     uds_set_session(requested_session);
 
     resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-    resp->data[0] = req->sub_sid;
+    resp->data_ptr[0] = req->sub_sid;
     resp->data_len = 1;
 
     return UDS_HANDLER_DONE;
@@ -213,9 +213,9 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
     }
 
     resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-    resp->data[0] = (uint8_t)(did >> 8);
-    resp->data[1] = (uint8_t)(did & 0xFF);
-    (void)memcpy(&resp->data[2], did_entry->data_ptr, did_entry->data_len);
+    resp->data_ptr[0] = (uint8_t)(did >> 8);
+    resp->data_ptr[1] = (uint8_t)(did & 0xFF);
+    (void)memcpy(&resp->data_ptr[2], did_entry->data_ptr, did_entry->data_len);
     resp->data_len = 2 + did_entry->data_len;
 
     return UDS_HANDLER_DONE;
@@ -251,7 +251,7 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
         seed_value = generate_random_byte();
 
         resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
-        resp->data[0] = seed_value;
+        resp->data_ptr[0] = seed_value;
         resp->data_len = 1;
 
         return UDS_HANDLER_DONE;
