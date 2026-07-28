@@ -342,62 +342,37 @@ void uds_set_security_level(uds_security_level_t level)
     g_current_security_level = level;
 }
 
-/****************************************************************************/
-/*                   UDS Tester (Client) Implementation                       */
-/****************************************************************************/
-
-static isotp_handle_t  g_tester_handle;
-static uint8_t         g_tester_send_buf[ISOTP_BUF_SIZE];
-static uint8_t         g_tester_recv_buf[ISOTP_BUF_SIZE];
-static uint8_t         g_tester_initialized;
-
-int uds_tester_init(void)
+/**
+ * @brief 通过 ISO-TP 发送 UDS 消息
+ *
+ * @param data 数据指针
+ * @param len  数据长度
+ * @return int ISOTP_RET_OK 成功，ISOTP_RET_INPROGRESS 发送中，ISOTP_RET_OVERFLOW 过长
+ */
+int uds_send(const uint8_t *data, uint16_t len)
 {
-    if (g_tester_initialized)
+    if (!g_initialized || !data || len == 0)
     {
-        uds_tester_deinit();
+        return ISOTP_RET_ERROR;
     }
-
-    /* Tester: sends to ECU (0x7E0), receives from ECU (0x7E8) */
-    isotp_init_handle_ex(&g_tester_handle, 0x7E8, 0x7E0,
-                          g_tester_send_buf, ISOTP_BUF_SIZE,
-                          g_tester_recv_buf, ISOTP_BUF_SIZE);
-
-    /* No callback – tester uses polling mode */
-    isotp_register_recv_cb(&g_tester_handle, NULL);
-
-    g_tester_initialized = 1;
-    return 0;
+    return isotp_send(&g_isotp_handle, data, len);
 }
 
-int uds_tester_send_request(const uint8_t *payload, uint16_t len)
+/**
+ * @brief 读取 ISO-TP 接收到的消息（轮询模式）
+ *
+ * @param buf      接收缓冲区
+ * @param buf_size 缓冲区大小
+ * @param out_len  实际接收长度
+ * @return int ISOTP_RET_OK 有数据，ISOTP_RET_NO_DATA 无数据
+ */
+int uds_read(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
 {
-    if (!g_tester_initialized || !payload || len == 0)
+    if (!g_initialized || !buf || !out_len)
     {
-        return -1;
+        return ISOTP_RET_ERROR;
     }
-    return isotp_send(&g_tester_handle, payload, len);
-}
-
-void uds_tester_poll(void)
-{
-    if (!g_tester_initialized) return;
-    isotp_poll(&g_tester_handle);
-}
-
-int uds_tester_read_response(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
-{
-    if (!g_tester_initialized || !buf || !out_len) return -1;
-    return isotp_read(&g_tester_handle, buf, buf_size, out_len);
-}
-
-void uds_tester_deinit(void)
-{
-    if (!g_tester_initialized) return;
-    memset(&g_tester_handle, 0, sizeof(g_tester_handle));
-    memset(g_tester_send_buf, 0, ISOTP_BUF_SIZE);
-    memset(g_tester_recv_buf, 0, ISOTP_BUF_SIZE);
-    g_tester_initialized = 0;
+    return isotp_read(&g_isotp_handle, buf, buf_size, out_len);
 }
 
 /****************************************************************************/
