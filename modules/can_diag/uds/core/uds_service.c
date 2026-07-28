@@ -182,7 +182,7 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
         return UDS_HANDLER_NRC_SENT;
     }
 
-    did = uds_did_from_data(req->data);
+    did = uds_did_from_data(req->data_ptr);
     did_entry = uds_find_did(did);
 
     if (did_entry == NULL)
@@ -258,7 +258,7 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
     }
     else if (req->sub_sid == 0x02)
     {
-        if (req->data_len >= 1 && req->data[0] == (uint8_t)(seed_value + 5))
+        if (req->data_len >= 1 && req->data_ptr[0] == (uint8_t)(seed_value + 5))
         {
             uds_set_security_level(UDS_SEC_LEVEL_1);
             resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
@@ -273,7 +273,7 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
     }
     else if (req->sub_sid == 0x04)
     {
-        if (req->data_len >= 1 && req->data[0] == (uint8_t)(seed_value + 10))
+        if (req->data_len >= 1 && req->data_ptr[0] == (uint8_t)(seed_value + 10))
         {
             uds_set_security_level(UDS_SEC_LEVEL_2);
             resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
@@ -315,7 +315,7 @@ uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *re
         return UDS_HANDLER_NRC_SENT;
     }
 
-    did = uds_did_from_data(req->data);
+    did = uds_did_from_data(req->data_ptr);
     did_entry = uds_find_did(did);
 
     cur_session = uds_get_session();
@@ -345,7 +345,7 @@ uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *re
         {
             write_len = did_entry->data_len;
         }
-        (void)memcpy(did_entry->data_ptr, &req->data[2], write_len);
+        (void)memcpy(did_entry->data_ptr, &req->data_ptr[2], write_len);
     }
 
     resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;

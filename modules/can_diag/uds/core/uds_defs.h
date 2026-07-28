@@ -129,10 +129,10 @@ typedef enum
 
 typedef struct
 {
-    uint8_t  sid;
-    uint8_t  sub_sid;
-    uint16_t data_len;
-    uint8_t  data[UDS_BUF_SIZE];
+    uint8_t       sid;
+    uint8_t       sub_sid;
+    uint16_t      data_len;
+    const uint8_t *data_ptr;
 } uds_request_t;
 
 typedef struct

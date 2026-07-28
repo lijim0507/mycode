@@ -27,9 +27,12 @@ static void uds_on_recv(uint8_t *data, uint16_t len);
 /****************************************************************************/
 static isotp_handle_t g_isotp_handle;
 
+/* UDS 自有的 ISO-TP 收发缓冲区，通过 isotp_init_handle_ex 注入给 isotp */
+static uint8_t g_uds_send_buf[ISOTP_BUF_SIZE];
+static uint8_t g_uds_recv_buf[ISOTP_BUF_SIZE];
+
 static volatile uint8_t  g_request_flag;
 static uint16_t           g_request_len;
-static uint8_t            g_request_buf[UDS_BUF_SIZE];
 
 static uds_request_t   g_request;
 static uds_response_t  g_response;
@@ -52,14 +55,15 @@ static uds_security_level_t g_current_security_level = UDS_SEC_LEVEL_LOCKED;
  */
 static void uds_on_recv(uint8_t *data, uint16_t len)
 {
-    if (len > UDS_BUF_SIZE)
+    if (len > ISOTP_BUF_SIZE)
     {
         return;
     }
 
-    (void)memcpy(g_request_buf, data, len);
+    /* data 即 g_uds_recv_buf，已由 isotp 直接写入，无需 copy */
     g_request_len = len;
     g_request_flag = 1;
+    (void)data;
 }
 
 /****************************************************************************/
@@ -91,7 +95,9 @@ int uds_init(void)
         return -2;
     }
 
-    isotp_init_handle(&g_isotp_handle,  config->request_id, config->response_id);
+    isotp_init_handle_ex(&g_isotp_handle, config->request_id, config->response_id,
+                          g_uds_send_buf, ISOTP_BUF_SIZE,
+                          g_uds_recv_buf, ISOTP_BUF_SIZE);
     isotp_register_recv_cb(&g_isotp_handle, uds_on_recv);
 
     g_current_session        = UDS_SESSION_DEFAULT;
@@ -158,7 +164,7 @@ void uds_process(void)
         return;
     }
 
-    sid = g_request_buf[0];
+    sid = g_uds_recv_buf[0];
 
     /*查询是否支持服务 */
     if (sid >= UDS_SERVICE_ID_RESERVED_MAX)
@@ -184,9 +190,10 @@ void uds_process(void)
     {
         case UDS_SERVICE_TYPE_SID_ONLY:
         {
-            g_request.sid      = g_request_buf[0];
-            g_request.sub_sid  = 0;
-            g_request.data_len = 0;
+            g_request.sid       = g_uds_recv_buf[0];
+            g_request.sub_sid   = 0;
+            g_request.data_len  = 0;
+            g_request.data_ptr  = NULL;
             break;
         }
         case UDS_SERVICE_TYPE_SID_SUB:
@@ -196,9 +203,10 @@ void uds_process(void)
                 uds_send_negative_response(sid, NRC_INCORRECT_MESSAGE_LENGTH);
                 return;
             }
-            g_request.sid      = g_request_buf[0];
-            g_request.sub_sid  = g_request_buf[1];
-            g_request.data_len = 0;
+            g_request.sid       = g_uds_recv_buf[0];
+            g_request.sub_sid   = g_uds_recv_buf[1];
+            g_request.data_len  = 0;
+            g_request.data_ptr  = NULL;
             break;
         }
         case UDS_SERVICE_TYPE_SID_DATA:
@@ -208,14 +216,14 @@ void uds_process(void)
                 uds_send_negative_response(sid, NRC_INCORRECT_MESSAGE_LENGTH);
                 return;
             }
-            g_request.sid      = g_request_buf[0];
-            g_request.sub_sid  = 0;
-            g_request.data_len = g_request_len - 1;
-            if (g_request.data_len > UDS_BUF_SIZE)
+            g_request.sid       = g_uds_recv_buf[0];
+            g_request.sub_sid   = 0;
+            g_request.data_len  = g_request_len - 1;
+            if (g_request.data_len > ISOTP_BUF_SIZE)
             {
-                g_request.data_len = UDS_BUF_SIZE;
+                g_request.data_len = ISOTP_BUF_SIZE;
             }
-            (void)memcpy(g_request.data, &g_request_buf[1], g_request.data_len);
+            g_request.data_ptr = &g_uds_recv_buf[1];
             break;
         }
         case UDS_SERVICE_TYPE_SID_SUB_DATA:
@@ -225,16 +233,20 @@ void uds_process(void)
                 uds_send_negative_response(sid, NRC_INCORRECT_MESSAGE_LENGTH);
                 return;
             }
-            g_request.sid      = g_request_buf[0];
-            g_request.sub_sid  = g_request_buf[1];
-            g_request.data_len = g_request_len - 2;
-            if (g_request.data_len > UDS_BUF_SIZE)
+            g_request.sid       = g_uds_recv_buf[0];
+            g_request.sub_sid   = g_uds_recv_buf[1];
+            g_request.data_len  = g_request_len - 2;
+            if (g_request.data_len > ISOTP_BUF_SIZE)
             {
-                g_request.data_len = UDS_BUF_SIZE;
+                g_request.data_len = ISOTP_BUF_SIZE;
             }
             if (g_request.data_len > 0)
             {
-                (void)memcpy(g_request.data, &g_request_buf[2], g_request.data_len);
+                g_request.data_ptr = &g_uds_recv_buf[2];
+            }
+            else
+            {
+                g_request.data_ptr = NULL;
             }
             break;
         }
@@ -258,16 +270,15 @@ void uds_process(void)
     }
 
     {
-        static uint8_t send_buf[UDS_BUF_SIZE];
         uint16_t send_len = 1 + g_response.data_len;
 
-        send_buf[0] = g_response.sid;
+        g_uds_send_buf[0] = g_response.sid;
         if (g_response.data_len > 0)
         {
-            (void)memcpy(&send_buf[1], g_response.data, g_response.data_len);
+            (void)memcpy(&g_uds_send_buf[1], g_response.data, g_response.data_len);
         }
 
-        uds_send_response(send_buf, send_len);
+        uds_send_response(g_uds_send_buf, send_len);
     }
 }
 
