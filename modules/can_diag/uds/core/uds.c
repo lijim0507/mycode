@@ -220,7 +220,7 @@ void uds_process(void)
         }
         case UDS_SERVICE_TYPE_SID_SUB_DATA:
         {
-            if (g_request_len < 3)
+            if (g_request_len < 2)
             {
                 uds_send_negative_response(sid, NRC_INCORRECT_MESSAGE_LENGTH);
                 return;
@@ -232,7 +232,10 @@ void uds_process(void)
             {
                 g_request.data_len = UDS_BUF_SIZE;
             }
-            (void)memcpy(g_request.data, &g_request_buf[2], g_request.data_len);
+            if (g_request.data_len > 0)
+            {
+                (void)memcpy(g_request.data, &g_request_buf[2], g_request.data_len);
+            }
             break;
         }
         default:
@@ -326,6 +329,11 @@ uds_security_level_t uds_get_security_level(void)
 void uds_set_session(uds_session_t session)
 {
     g_current_session = session;
+    /* ISO 14229: switching to default session resets security level */
+    if (session == UDS_SESSION_DEFAULT)
+    {
+        g_current_security_level = UDS_SEC_LEVEL_LOCKED;
+    }
 }
 
 /**

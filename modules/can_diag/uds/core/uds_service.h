@@ -33,7 +33,7 @@ typedef struct
 /****************************************************************************/
 /*						Exported Functions								*/
 /****************************************************************************/
-const uds_service_t services_table[UDS_SERVICE_ID_RESERVED_MAX];
+extern const uds_service_t services_table[UDS_SERVICE_ID_RESERVED_MAX];
 
 
 /****************************************************************************/
