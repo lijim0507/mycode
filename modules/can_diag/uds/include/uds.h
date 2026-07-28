@@ -114,6 +114,44 @@ void                 uds_set_session(uds_session_t session);
  */
 void                 uds_set_security_level(uds_security_level_t level);
 
+/****************************************************************************/
+/*                   UDS Tester (Client) API                                 */
+/****************************************************************************/
+
+/**
+ * @brief 初始化 UDS Tester 模式，使用独立 ISO-TP 句柄和缓冲区
+ *        配置为 Tester 角色：发送请求到 0x7E0，接收响应从 0x7E8
+ * @return int 0 成功，负值失败
+ */
+int  uds_tester_init(void);
+
+/**
+ * @brief 发送 UDS 请求数据
+ * @param payload 请求数据 (SID + 参数)
+ * @param len     数据长度
+ * @return int 0 成功，负值失败
+ */
+int  uds_tester_send_request(const uint8_t *payload, uint16_t len);
+
+/**
+ * @brief 轮询 Tester ISO-TP 句柄，处理接收和发送状态机
+ */
+void uds_tester_poll(void);
+
+/**
+ * @brief 读取 ECU 响应数据（轮询模式）
+ * @param buf      接收缓冲区
+ * @param buf_size 缓冲区大小
+ * @param out_len  实际接收长度
+ * @return int 0 有数据，-1 无数据
+ */
+int  uds_tester_read_response(uint8_t *buf, uint16_t buf_size, uint16_t *out_len);
+
+/**
+ * @brief 反初始化 Tester
+ */
+void uds_tester_deinit(void);
+
 #ifdef __cplusplus
 }
 #endif

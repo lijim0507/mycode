@@ -103,6 +103,21 @@ int  isotp_deinit(void);
 void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid);
 
 /**
+ * @brief 初始化 ISO-TP 句柄（使用外部缓冲区，支持多句柄并存）
+ *
+ * @param handle      ISO-TP 句柄指针
+ * @param recvid      接收滤波 CAN ID
+ * @param sendid      默认发送 CAN ID
+ * @param send_buf    发送缓冲区（大小 >= ISOTP_BUF_SIZE）
+ * @param send_size   发送缓冲区大小
+ * @param recv_buf    接收缓冲区（大小 >= ISOTP_BUF_SIZE）
+ * @param recv_size   接收缓冲区大小
+ */
+void isotp_init_handle_ex(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
+                           uint8_t *send_buf, uint16_t send_size,
+                           uint8_t *recv_buf, uint16_t recv_size);
+
+/**
  * @brief 注册接收完成回调函数，设为 NULL 则切换为轮询模式
  *
  * @param handle ISO-TP 句柄指针

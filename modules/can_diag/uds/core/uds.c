@@ -347,5 +347,63 @@ void uds_set_security_level(uds_security_level_t level)
 }
 
 /****************************************************************************/
+/*                   UDS Tester (Client) Implementation                       */
+/****************************************************************************/
+
+static isotp_handle_t  g_tester_handle;
+static uint8_t         g_tester_send_buf[ISOTP_BUF_SIZE];
+static uint8_t         g_tester_recv_buf[ISOTP_BUF_SIZE];
+static uint8_t         g_tester_initialized;
+
+int uds_tester_init(void)
+{
+    if (g_tester_initialized)
+    {
+        uds_tester_deinit();
+    }
+
+    /* Tester: sends to ECU (0x7E0), receives from ECU (0x7E8) */
+    isotp_init_handle_ex(&g_tester_handle, 0x7E8, 0x7E0,
+                          g_tester_send_buf, ISOTP_BUF_SIZE,
+                          g_tester_recv_buf, ISOTP_BUF_SIZE);
+
+    /* No callback – tester uses polling mode */
+    isotp_register_recv_cb(&g_tester_handle, NULL);
+
+    g_tester_initialized = 1;
+    return 0;
+}
+
+int uds_tester_send_request(const uint8_t *payload, uint16_t len)
+{
+    if (!g_tester_initialized || !payload || len == 0)
+    {
+        return -1;
+    }
+    return isotp_send(&g_tester_handle, payload, len);
+}
+
+void uds_tester_poll(void)
+{
+    if (!g_tester_initialized) return;
+    isotp_poll(&g_tester_handle);
+}
+
+int uds_tester_read_response(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
+{
+    if (!g_tester_initialized || !buf || !out_len) return -1;
+    return isotp_read(&g_tester_handle, buf, buf_size, out_len);
+}
+
+void uds_tester_deinit(void)
+{
+    if (!g_tester_initialized) return;
+    memset(&g_tester_handle, 0, sizeof(g_tester_handle));
+    memset(g_tester_send_buf, 0, ISOTP_BUF_SIZE);
+    memset(g_tester_recv_buf, 0, ISOTP_BUF_SIZE);
+    g_tester_initialized = 0;
+}
+
+/****************************************************************************/
 /*								EOF											*/
 /****************************************************************************/

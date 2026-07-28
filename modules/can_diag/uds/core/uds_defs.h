@@ -31,7 +31,7 @@
 #define NRC_REQUEST_SEQUENCE_ERROR                     0x24
 #define NRC_FAILURE_EXECUTION                          0x26
 #define NRC_REQUEST_OUT_OF_RANGE                       0x31
-#define NRC_SECURITY_ACCESS_DENIED                    0x35
+#define NRC_SECURITY_ACCESS_DENIED                    0x33
 #define NRC_INVALID_KEY                                0x35
 #define NRC_EXCEEDED_ATTEMPTS                          0x36
 #define NRC_REQUIRED_TIME_DELAY_NOT_EXPIRED            0x37

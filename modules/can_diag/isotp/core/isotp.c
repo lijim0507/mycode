@@ -680,16 +680,25 @@ int isotp_deinit(void)
  */
 void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid)
 {
+    isotp_init_handle_ex(handle, recvid, sendid,
+                          g_isotp_send_buf, ISOTP_BUF_SIZE,
+                          g_isotp_recv_buf, ISOTP_BUF_SIZE);
+}
+
+void isotp_init_handle_ex(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
+                           uint8_t *send_buf, uint16_t send_size,
+                           uint8_t *recv_buf, uint16_t recv_size)
+{
     memset(handle, 0, sizeof(*handle));
     handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
     handle->send_status = ISOTP_SEND_STATUS_IDLE;
     handle->send_arbitration_id = sendid;
     handle->send_current_id = sendid;
     handle->receive_arbitration_id = recvid;
-    handle->send_buffer = g_isotp_send_buf;
-    handle->send_buf_size = ISOTP_BUF_SIZE;
-    handle->receive_buffer = g_isotp_recv_buf;
-    handle->receive_buf_size = ISOTP_BUF_SIZE;
+    handle->send_buffer = send_buf;
+    handle->send_buf_size = send_size;
+    handle->receive_buffer = recv_buf;
+    handle->receive_buf_size = recv_size;
     handle->receive_block_size = ISO_TP_DEFAULT_BLOCK_SIZE;
     handle->receive_st_min = ISO_TP_DEFAULT_ST_MIN;
 }
