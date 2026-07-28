@@ -39,10 +39,7 @@ static void isotp_debug(const char *message);
 /*							Global Variables								*/
 /****************************************************************************/
 static const isotp_port_driver_t *g_isotp_driver;
-#ifndef ISOTP_NO_INTERNAL_BUFS
-static uint8_t        g_isotp_send_buf[ISOTP_BUF_SIZE];
-static uint8_t        g_isotp_recv_buf[ISOTP_BUF_SIZE];
-#endif
+
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
@@ -680,20 +677,8 @@ int isotp_deinit(void)
  * @param recvid 接收滤波 CAN 仲裁 ID
  * @param sendid 默认发送 CAN 仲裁 ID
  */
-void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid)
-{
-#ifndef ISOTP_NO_INTERNAL_BUFS
-    isotp_init_handle_ex(handle, recvid, sendid,
-                          g_isotp_send_buf, ISOTP_BUF_SIZE,
-                          g_isotp_recv_buf, ISOTP_BUF_SIZE);
-#else
-    (void)handle;
-    (void)recvid;
-    (void)sendid;
-#endif
-}
 
-void isotp_init_handle_ex(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
+void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
                            uint8_t *send_buf, uint16_t send_size,
                            uint8_t *recv_buf, uint16_t recv_size)
 {

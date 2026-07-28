@@ -93,14 +93,6 @@ int  isotp_init_with_driver(const isotp_port_driver_t *driver);
  */
 int  isotp_deinit(void);
 
-/**
- * @brief 初始化 ISO-TP 句柄，设置收发 CAN ID 并分配内部缓冲区
- *
- * @param handle ISO-TP 句柄指针
- * @param recvid 接收滤波 CAN 仲裁 ID
- * @param sendid 默认发送 CAN 仲裁 ID
- */
-void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid);
 
 /**
  * @brief 初始化 ISO-TP 句柄（使用外部缓冲区，支持多句柄并存）
@@ -113,7 +105,7 @@ void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid)
  * @param recv_buf    接收缓冲区（大小 >= ISOTP_BUF_SIZE）
  * @param recv_size   接收缓冲区大小
  */
-void isotp_init_handle_ex(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
+void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
                            uint8_t *send_buf, uint16_t send_size,
                            uint8_t *recv_buf, uint16_t recv_size);
 

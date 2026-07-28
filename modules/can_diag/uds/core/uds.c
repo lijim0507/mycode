@@ -124,20 +124,6 @@ void uds_deinit(void)
     g_initialized = 0;
 }
 
-/**
- * @brief 轮询 ISO-TP，处理多帧续传、超时和 CAN 接收
- *
- * 需在主循环中周期性调用。内部通过 port driver 的
- * receive() 自动从环形缓冲区取出 CAN 帧。
- */
-void uds_poll(void)
-{
-    if (!g_initialized)
-    {
-        return;
-    }
-    isotp_poll(&g_isotp_handle);
-}
 
 /**
  * @brief 处理 UDS 请求
@@ -145,12 +131,14 @@ void uds_poll(void)
  * 检查是否有请求标志，若有则解析 SID、查 Commands_Table、
  * 调用对应 handler，并发送响应。
  */
-void uds_process(void)
+void uds_poll(void)
 {
     uint8_t sid;
     uds_service_type_t    expected_type;
     uds_service_handler_t handler;
     uds_handler_result_t  result;
+
+    isotp_poll(&g_isotp_handle);
 
     if (!g_request_flag)
     {

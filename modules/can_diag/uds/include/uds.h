@@ -54,13 +54,6 @@ int  uds_init(void);
  */
 void uds_deinit(void);
 
-/**
- * @brief 轮询 ISO-TP，处理多帧续传、超时和 CAN 接收
- *
- * 需在主循环中周期性调用。内部通过 port driver 的
- * receive() 自动从环形缓冲区取出 CAN 帧。
- */
-void uds_poll(void);
 
 /**
  * @brief 处理 UDS 请求，在收到完整 ISO-TP 数据后由主循环调用
@@ -68,7 +61,7 @@ void uds_poll(void);
  * 检查是否有请求标志，若有则解析 SID、查 Commands_Table、
  * 调用对应 handler，并发送响应。
  */
-void uds_process(void);
+void uds_poll(void);
 
 /**
  * @brief 通过 ISO-TP 发送 UDS 响应数据
