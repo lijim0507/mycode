@@ -95,7 +95,7 @@ int uds_init(void)
         return -2;
     }
 
-    isotp_init_handle_ex(&g_isotp_handle, config->request_id, config->response_id,
+    isotp_init_handle(&g_isotp_handle, config->request_id, config->response_id,
                           g_uds_send_buf, ISOTP_BUF_SIZE,
                           g_uds_recv_buf, ISOTP_BUF_SIZE);
     isotp_register_recv_cb(&g_isotp_handle, uds_on_recv);
@@ -107,6 +107,18 @@ int uds_init(void)
 
     g_initialized = 1;
     return 0;
+}
+
+/**
+ * @brief 将接收到的 CAN 帧送入 UDS 诊断接收处理，由应用层在 CAN 接收循环中调用
+ *
+ * @param id   CAN 帧仲裁 ID
+ * @param data CAN 帧载荷数据
+ * @param len  数据长度
+ */
+void uds_feed_can_message(uint32_t id, const uint8_t *data, uint8_t len)
+{
+    isotp_feed(&g_isotp_handle, id, (uint8_t *)data, len);
 }
 
 /**

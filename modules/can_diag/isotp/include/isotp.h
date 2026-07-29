@@ -17,10 +17,7 @@ extern "C" {
 
 typedef struct isotp_port_driver
 {
-    int      (*init)(void);
     int      (*send)(uint32_t id, const uint8_t *data, uint8_t len);
-    int      (*receive)(uint32_t *id, uint8_t *data, uint8_t *len);
-    int      (*deinit)(void);
     uint32_t (*get_ms)(void);
     void     (*debug)(const char *message, ...);
 } isotp_port_driver_t;
@@ -118,7 +115,17 @@ void isotp_init_handle(isotp_handle_t *handle, uint32_t recvid, uint32_t sendid,
 void isotp_register_recv_cb(isotp_handle_t *handle, isotp_recv_cb_t cb);
 
 /**
- * @brief 轮询处理 ISO-TP 接收与发送状态机，需在主循环中周期调用
+ * @brief 将接收到的 CAN 帧送入 ISO-TP 接收状态机，由应用层在 CAN 接收循环中调用
+ *
+ * @param handle ISO-TP 句柄指针
+ * @param id     CAN 帧仲裁 ID
+ * @param data   CAN 帧载荷数据
+ * @param len    数据长度
+ */
+void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len);
+
+/**
+ * @brief 轮询处理 ISO-TP 发送状态机与接收超时，需在主循环中周期调用
  *
  * @param handle ISO-TP 句柄指针
  */

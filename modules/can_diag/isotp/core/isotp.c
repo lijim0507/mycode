@@ -580,35 +580,6 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
     };
 }
 
-/**
- * @brief 将收到的 CAN 帧送入 ISO-TP 接收状态机处理，接收完成时触发回调
- *
- * @param handle ISO-TP 句柄
- * @param id CAN 帧仲裁 ID
- * @param data CAN 帧载荷数据
- * @param len 数据长度
- */
-static void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
-{
-    if (handle == NULL || data == NULL)
-    {
-        return;
-    }
-
-    if (handle->receive_arbitration_id != id)
-    {
-        return;
-    }
-
-    isotp_rx_process(handle, data, len);
-
-    /* In callback mode: auto-notify when message is fully assembled */
-    if (handle->recv_cb && ISOTP_RECEIVE_STATUS_FULL == handle->receive_status)
-    {
-        handle->recv_cb(handle->receive_buffer, handle->receive_size);
-        handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
-    }
-}
 
 /****************************************************************************/
 /*							Exported Functions    						    */
@@ -643,11 +614,6 @@ int isotp_init_with_driver(const isotp_port_driver_t *driver)
         isotp_deinit();
     }
 
-    if (driver->init && driver->init() != 0)
-    {
-        return ISOTP_RET_ERROR;
-    }
-
     g_isotp_driver = driver;
 
     return ISOTP_RET_OK;
@@ -660,11 +626,6 @@ int isotp_init_with_driver(const isotp_port_driver_t *driver)
  */
 int isotp_deinit(void)
 {
-    if (g_isotp_driver && g_isotp_driver->deinit)
-    {
-        g_isotp_driver->deinit();
-    }
-
     g_isotp_driver = NULL;
 
     return ISOTP_RET_OK;
@@ -844,9 +805,6 @@ void isotp_poll(isotp_handle_t *handle)
 {
     int ret;
     uint32_t now;
-    uint32_t id;
-    uint8_t data[8];
-    uint8_t len;
 
     if (handle == NULL || !g_isotp_driver)
     {
@@ -854,15 +812,6 @@ void isotp_poll(isotp_handle_t *handle)
     }
 
     now = g_isotp_driver->get_ms();
-
-    /* 接收处理 */
-    if (g_isotp_driver->receive)
-    {
-        while (g_isotp_driver->receive(&id, data, &len))
-        {
-            isotp_feed(handle, id, data, len);
-        }
-    }
 
     /* receive remaining consecutive frames timeout handling */
     if (ISOTP_RECEIVE_STATUS_INPROGRESS == handle->receive_status)
@@ -916,5 +865,35 @@ void isotp_poll(isotp_handle_t *handle)
         }
     }
 
+}
+
+/**
+ * @brief 将收到的 CAN 帧送入 ISO-TP 接收状态机处理，接收完成时触发回调
+ *
+ * @param handle ISO-TP 句柄
+ * @param id     CAN 帧仲裁 ID
+ * @param data   CAN 帧载荷数据
+ * @param len    数据长度
+ */
+void isotp_feed(isotp_handle_t *handle, uint32_t id, uint8_t *data, uint8_t len)
+{
+    if (handle == NULL || data == NULL)
+    {
+        return;
+    }
+
+    if (handle->receive_arbitration_id != id)
+    {
+        return;
+    }
+
+    isotp_rx_process(handle, data, len);
+
+    /* In callback mode: auto-notify when message is fully assembled */
+    if (handle->recv_cb && ISOTP_RECEIVE_STATUS_FULL == handle->receive_status)
+    {
+        handle->recv_cb(handle->receive_buffer, handle->receive_size);
+        handle->receive_status = ISOTP_RECEIVE_STATUS_IDLE;
+    }
 }
 

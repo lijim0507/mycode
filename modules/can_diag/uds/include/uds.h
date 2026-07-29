@@ -56,6 +56,15 @@ void uds_deinit(void);
 
 
 /**
+ * @brief 将接收到的 CAN 帧送入 UDS 诊断接收处理，由应用层在 CAN 接收循环中调用
+ *
+ * @param id   CAN 帧仲裁 ID
+ * @param data CAN 帧载荷数据
+ * @param len  数据长度
+ */
+void uds_feed_can_message(uint32_t id, const uint8_t *data, uint8_t len);
+
+/**
  * @brief 处理 UDS 请求，在收到完整 ISO-TP 数据后由主循环调用
  *
  * 检查是否有请求标志，若有则解析 SID、查 Commands_Table、
