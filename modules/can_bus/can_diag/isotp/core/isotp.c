@@ -2,7 +2,6 @@
 /*								Includes									*/
 /****************************************************************************/
 #include "isotp.h"
-#include "isotp_port.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -38,7 +37,7 @@ static void isotp_debug(const char *message);
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
-static const isotp_port_driver_t *g_isotp_driver;
+static const can_port_driver_t *g_isotp_driver;
 
 /****************************************************************************/
 /*							Static Functions    						    */
@@ -586,23 +585,12 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
 /****************************************************************************/
 
 /**
- * @brief 使用默认 port 驱动初始化 ISO-TP 模块
- *
- * @return int ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
- */
-int isotp_init(void)
-{
-    const isotp_port_driver_t *driver = isotp_port_get_driver();
-    return isotp_init_with_driver(driver);
-}
-
-/**
- * @brief 使用指定 port 驱动初始化 ISO-TP 模块，若之前已初始化则先反初始化
+ * @brief 使用指定 port 驱动初始化 ISO-TP 模块
  *
  * @param driver port 驱动指针，send 和 get_ms 不可为 NULL
  * @return int ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
  */
-int isotp_init_with_driver(const isotp_port_driver_t *driver)
+int isotp_init_with_driver(const can_port_driver_t *driver)
 {
     if (!driver || !driver->send || !driver->get_ms)
     {

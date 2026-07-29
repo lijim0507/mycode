@@ -13,6 +13,7 @@
 /*								Macros										*/
 /****************************************************************************/
 
+
 /****************************************************************************/
 /*								Typedefs									*/
 /****************************************************************************/
@@ -75,27 +76,16 @@ static void uds_on_recv(uint8_t *data, uint16_t len)
  *
  * @return int 0 表示成功，负值表示失败
  */
-int uds_init(void)
+int uds_init(uint32_t request_can_id, uint32_t response_can_id)
 {
-    const uds_port_config_t *config;
 
     if (g_initialized)
     {
         uds_deinit();
     }
 
-    config = uds_port_get_config();
-    if (config == NULL)
-    {
-        return -1;
-    }
 
-    if (isotp_init() != ISOTP_RET_OK)
-    {
-        return -2;
-    }
-
-    isotp_init_handle(&g_isotp_handle, config->request_id, config->response_id,
+    isotp_init_handle(&g_isotp_handle, request_can_id, response_can_id,
                           g_uds_send_buf, ISOTP_BUF_SIZE,
                           g_uds_recv_buf, ISOTP_BUF_SIZE);
     isotp_register_recv_cb(&g_isotp_handle, uds_on_recv);
@@ -130,8 +120,6 @@ void uds_deinit(void)
     {
         return;
     }
-
-    isotp_deinit();
 
     g_initialized = 0;
 }
