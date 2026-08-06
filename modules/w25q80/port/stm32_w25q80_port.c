@@ -5,6 +5,8 @@
 
 #include "stm32f1xx_hal.h"
 
+#include <stdbool.h>
+
 /****************************************************************************/
 /*                              Macros                                      */
 /****************************************************************************/
@@ -97,7 +99,24 @@ static int stm32_w25q80_init(void)
         return -1;
     }
 
-    __HAL_RCC_GPIO_CLK_ENABLE(W25Q80_STM32_CS_GPIO_PORT);
+#if defined(GPIOA) && W25Q80_STM32_CS_GPIO_PORT == GPIOA
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+#elif defined(GPIOB) && W25Q80_STM32_CS_GPIO_PORT == GPIOB
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+#elif defined(GPIOC) && W25Q80_STM32_CS_GPIO_PORT == GPIOC
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+#elif defined(GPIOD) && W25Q80_STM32_CS_GPIO_PORT == GPIOD
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+#elif defined(GPIOE) && W25Q80_STM32_CS_GPIO_PORT == GPIOE
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+#elif defined(GPIOF) && W25Q80_STM32_CS_GPIO_PORT == GPIOF
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+#elif defined(GPIOG) && W25Q80_STM32_CS_GPIO_PORT == GPIOG
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+#else
+    /* User must provide clock enable via W25Q80_STM32_CS_GPIO_PORT override or
+       manually enable the CS GPIO clock before calling w25q80_init() */
+#endif
 
     gpio_init.Pin   = W25Q80_STM32_CS_GPIO_PIN;
     gpio_init.Mode  = GPIO_MODE_OUTPUT_PP;
