@@ -53,17 +53,7 @@ typedef struct {
 } ws2812_gain_t;
 #endif
 
-/**
- * @brief  WS2812 硬件驱动抽象接口
- * @note   上层 core 层不关心具体硬件实现，只通过此接口调用 port 层。
- *         每个平台只需实现这四个函数指针即可完成移植。
- */
-typedef struct ws2812_driver {
-    int (*init)(void);
-    int (*transmit)(const uint8_t *data, uint32_t len);
-    int (*is_busy)(void);
-    int (*deinit)(void);
-} ws2812_driver_t;
+
 
 /****************************************************************************/
 /*						Exproted Variables									*/

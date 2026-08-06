@@ -16,14 +16,7 @@ extern "C" {
 
 typedef void (*can_bus_handler_t)(uint32_t id, const uint8_t *data, uint8_t len);
 
-typedef struct can_port_driver
-{
-    int      (*init)(void);
-    int      (*send)(uint32_t id, const uint8_t *data, uint8_t len);
-    int      (*receive)(uint32_t *id, uint8_t *data, uint8_t *len);
-    uint32_t (*get_ms)(void);
-    void     (*debug)(const char *message, ...);
-} can_port_driver_t;
+
 
 /****************************************************************************/
 /*                         Exported Functions                               */
