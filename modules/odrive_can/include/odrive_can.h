@@ -75,19 +75,8 @@ extern "C" {
 #define INPUT_MODE_TORQUE_RAMP  6
 #define INPUT_MODE_MIRROR       9
 
-/* CAN ID 生成宏 */
-#define CAN_ID_GEN(node_id, cmd_id)  (((node_id) << 5) | ((cmd_id) & 0x1F))
-
-/****************************************************************************/
-/*								Typedefs									*/
-/****************************************************************************/
-
-typedef struct odrive_can_driver {
-    int  (*init)(void *config);
-    int  (*send)(uint16_t id, const uint8_t *data, uint8_t len);
-    int  (*recv)(uint16_t *id, uint8_t *data, uint8_t *len, uint32_t timeout_ms);
-    int  (*deinit)(void);
-} odrive_can_driver_t;
+/* CAN ID 生成宏 (id 使用 uint32_t 兼容 11/29-bit) */
+#define CAN_ID_GEN(node_id, cmd_id)  (((uint32_t)(node_id) << 5) | ((cmd_id) & 0x1F))
 
 /****************************************************************************/
 /*						Exproted Variables								*/
@@ -97,7 +86,7 @@ typedef struct odrive_can_driver {
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-int  odrive_can_init(const odrive_can_driver_t *driver, void *port_cfg);
+int  odrive_can_init(void);
 int  odrive_can_deinit(void);
 
 void odrive_can_set_axis_state(uint8_t node_id, uint8_t axis_state);

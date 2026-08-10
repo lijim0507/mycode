@@ -27,7 +27,7 @@ extern "C" {
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-const odrive_can_driver_t *odrive_can_port_get_driver(void);
+const can_port_driver_t *odrive_can_port_get_driver(void);
 
 #ifdef __cplusplus
 }

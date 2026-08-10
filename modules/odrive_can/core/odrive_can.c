@@ -3,6 +3,7 @@
 /****************************************************************************/
 #include "odrive_can.h"
 #include "odrive_can_port.h"
+#include "can_port.h"
 
 #include <string.h>
 /****************************************************************************/
@@ -24,23 +25,29 @@ static void pack_int16(uint8_t *buf, int16_t val);
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
-static const odrive_can_driver_t *g_driver;
-static bool                       g_initialized;
+static const can_port_driver_t *g_driver;
+static bool                      g_initialized;
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
 
-int odrive_can_init(const odrive_can_driver_t *driver, void *port_cfg)
+int odrive_can_init(void)
 {
-    if (!driver || !driver->init || !driver->send) {
+    const can_port_driver_t *driver;
+
+    driver = odrive_can_port_get_driver();
+    if (!driver || !driver->init || !driver->send)
+    {
         return -1;
     }
 
-    if (g_initialized) {
+    if (g_initialized)
+    {
         odrive_can_deinit();
     }
 
-    if (driver->init(port_cfg) != 0) {
+    if (driver->init() != 0)
+    {
         return -2;
     }
 
@@ -166,7 +173,7 @@ static int odrive_can_send_cmd(uint8_t node_id, uint8_t cmd_id,
         return -1;
     }
 
-    uint16_t can_id = CAN_ID_GEN(node_id, cmd_id);
+    uint32_t can_id = CAN_ID_GEN(node_id, cmd_id);
     return g_driver->send(can_id, data, len);
 }
 
