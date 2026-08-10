@@ -29,17 +29,9 @@ typedef enum {
 } eeprom_type_t;
 
 /**
- * @brief  SPI EEPROM 传输接口
- * @note   上层只需提供 CS 引脚控制 + SPI 全双工传输两个原语
- */
-typedef struct {
-    void    (*cs_set)(uint8_t level);
-    uint8_t (*transfer)(uint8_t data);
-} spi_eeprom_transport_t;
-
-/**
  * @brief  EEPROM 设备配置（I2C / SPI 统一）
  * @note   支持 24Cxx 系列（I2C）及 25LCxx 系列（SPI）
+ *         SPI 路径使用统一的 spi_port_driver_t（参见 modules/port demo/spi_port.h）
  */
 typedef struct {
     eeprom_type_t type;
@@ -64,7 +56,7 @@ typedef struct {
  * @param  config    EEPROM 设备配置（根据 type 字段自动选择传输类型）
  * @param  transport 传输接口指针：
  *                   - EEPROM_TYPE_I2C: (const i2c_transport_t *)
- *                   - EEPROM_TYPE_SPI: (const spi_eeprom_transport_t *)
+ *                   - EEPROM_TYPE_SPI: (const spi_port_driver_t *)
  * @return 0: 成功, -1: 参数错误, -2: transport 无效
  */
 int  eeprom_init(eeprom_config_t *config, const void *transport);

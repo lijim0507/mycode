@@ -3,6 +3,7 @@
 /****************************************************************************/
 #include "eeprom.h"
 #include "swi2c.h"
+#include "spi_port.h"
 
 #include <stdbool.h>
 
@@ -46,7 +47,7 @@ static int eeprom_validate_write_params(uint32_t address, const uint8_t *data, u
 /****************************************************************************/
 
 static const i2c_transport_t       *g_i2c;
-static const spi_eeprom_transport_t *g_spi;
+static const spi_port_driver_t         *g_spi;
 static eeprom_config_t              g_config;
 static bool                         g_initialized;
 
@@ -99,8 +100,9 @@ int eeprom_init(eeprom_config_t *config, const void *transport)
             return -1;
         }
 
-        const spi_eeprom_transport_t *spi = (const spi_eeprom_transport_t *)transport;
-        if (!spi->cs_set || !spi->transfer)
+        const spi_port_driver_t *spi = (const spi_port_driver_t *)transport;
+        if (!spi->cs_set || !spi->spi_write || !spi->spi_read ||
+            !spi->spi_transceive || !spi->delay_ms || !spi->delay_us)
         {
             return -2;
         }
@@ -334,10 +336,15 @@ static int eeprom_i2c_read_chunk(uint32_t address, uint8_t *data, uint16_t size)
  */
 static void eeprom_spi_send_address(uint32_t address)
 {
-    for (int i = g_config.addr_bytes - 1; i >= 0; i--)
+    uint8_t addr_buf[3];
+    uint8_t addr_len = g_config.addr_bytes;
+
+    for (uint8_t i = 0; i < addr_len; i++)
     {
-        g_spi->transfer((uint8_t)(address >> (uint8_t)(i * 8)));
+        addr_buf[i] = (uint8_t)(address >> (uint8_t)((addr_len - 1 - i) * 8));
     }
+
+    g_spi->spi_write(addr_buf, addr_len);
 }
 
 /**
@@ -347,20 +354,24 @@ static void eeprom_spi_send_address(uint32_t address)
 static int eeprom_spi_wait_ready(void)
 {
     uint32_t elapsed = 0;
+    uint8_t  tx[2];
+    uint8_t  rx[2];
+
+    tx[0] = EEPROM_SPI_RDSR;
+    tx[1] = 0x00;
 
     do
     {
         g_spi->cs_set(0);
-        g_spi->transfer(EEPROM_SPI_RDSR);
-        uint8_t status = g_spi->transfer(0x00);
+        g_spi->spi_transceive(tx, rx, 2);
         g_spi->cs_set(1);
 
-        if (!(status & EEPROM_SPI_WIP_BIT))
+        if (!(rx[1] & EEPROM_SPI_WIP_BIT))
         {
             return 0;
         }
 
-        g_config.delay_ms(1);
+        g_spi->delay_ms(1);
         elapsed++;
     }
     while (elapsed < EEPROM_SPI_WRITE_TIMEOUT_MS);
@@ -373,18 +384,19 @@ static int eeprom_spi_wait_ready(void)
  */
 static int eeprom_spi_write_page(uint32_t address, const uint8_t *data, uint16_t size)
 {
+    uint8_t cmd_wren = EEPROM_SPI_WREN;
+
+    /* Step 1: Write Enable */
     g_spi->cs_set(0);
-    g_spi->transfer(EEPROM_SPI_WREN);
+    g_spi->spi_write(&cmd_wren, 1);
     g_spi->cs_set(1);
 
+    /* Step 2: WRITE command + address + data in one transaction */
     g_spi->cs_set(0);
-    g_spi->transfer(EEPROM_SPI_WRITE);
+    uint8_t cmd_write = EEPROM_SPI_WRITE;
+    g_spi->spi_write(&cmd_write, 1);
     eeprom_spi_send_address(address);
-
-    for (uint16_t i = 0; i < size; i++)
-    {
-        g_spi->transfer(data[i]);
-    }
+    g_spi->spi_write(data, size);
     g_spi->cs_set(1);
 
     return eeprom_spi_wait_ready();
@@ -396,13 +408,10 @@ static int eeprom_spi_write_page(uint32_t address, const uint8_t *data, uint16_t
 static int eeprom_spi_read_chunk(uint32_t address, uint8_t *data, uint16_t size)
 {
     g_spi->cs_set(0);
-    g_spi->transfer(EEPROM_SPI_READ);
+    uint8_t cmd_read = EEPROM_SPI_READ;
+    g_spi->spi_write(&cmd_read, 1);
     eeprom_spi_send_address(address);
-
-    for (uint16_t i = 0; i < size; i++)
-    {
-        data[i] = g_spi->transfer(0x00);
-    }
+    g_spi->spi_read(data, size);
     g_spi->cs_set(1);
 
     return 0;

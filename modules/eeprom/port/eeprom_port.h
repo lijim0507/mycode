@@ -7,6 +7,7 @@
 /****************************************************************************/
 #include "eeprom.h"
 #include "swi2c.h"
+#include "spi_port.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +30,7 @@ extern "C" {
 /****************************************************************************/
 
 const i2c_transport_t        *eeprom_port_get_i2c(void);
-const spi_eeprom_transport_t *eeprom_port_get_spi(void);
+const spi_port_driver_t *eeprom_port_get_spi(void);
 
 #ifdef __cplusplus
 }
