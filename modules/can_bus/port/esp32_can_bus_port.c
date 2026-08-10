@@ -6,8 +6,6 @@
 #include <string.h>
 
 #include "driver/twai.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 /****************************************************************************/
 /*                              Macros                                      */
@@ -25,12 +23,11 @@
 /*                         Prototypes Of Local Functions                    */
 /****************************************************************************/
 
-static int      esp32_can_bus_init(void);
-static int      esp32_can_bus_send(uint32_t id, const uint8_t *data, uint8_t len);
-static int      esp32_can_bus_receive(uint32_t *id, uint8_t *data, uint8_t *len);
-static int      esp32_can_bus_task_create(void (*task)(void *), void *arg);
-static uint32_t esp32_can_bus_get_ms(void);
-static void     esp32_can_bus_debug(const char *message, ...);
+static int esp32_can_bus_init(void);
+static int esp32_can_bus_deinit(void);
+static int esp32_can_bus_send(uint32_t id, const uint8_t *data, uint8_t len);
+static int esp32_can_bus_receive(uint32_t *id, uint8_t *data, uint8_t *len,
+                                  uint32_t timeout_ms);
 
 /****************************************************************************/
 /*                         Exported Functions                               */
@@ -39,12 +36,10 @@ static void     esp32_can_bus_debug(const char *message, ...);
 const can_port_driver_t *can_bus_port_get_driver(void)
 {
     static const can_port_driver_t driver = {
-        .init        = esp32_can_bus_init,
-        .send        = esp32_can_bus_send,
-        .receive     = esp32_can_bus_receive,
-        .task_create = esp32_can_bus_task_create,
-        .get_ms      = esp32_can_bus_get_ms,
-        .debug       = esp32_can_bus_debug,
+        .init    = esp32_can_bus_init,
+        .deinit  = esp32_can_bus_deinit,
+        .send    = esp32_can_bus_send,
+        .receive = esp32_can_bus_receive,
     };
     return &driver;
 }
@@ -53,6 +48,11 @@ const can_port_driver_t *can_bus_port_get_driver(void)
 /*                         Static Functions                                 */
 /****************************************************************************/
 
+/**
+ * @brief  初始化 TWAI 外设
+ *
+ * @return 0: 成功, -1: 驱动安装失败, -2: 启动失败
+ */
 static int esp32_can_bus_init(void)
 {
     twai_general_config_t g_cfg = {
@@ -84,6 +84,23 @@ static int esp32_can_bus_init(void)
     return 0;
 }
 
+/**
+ * @brief  释放 TWAI 外设资源
+ *
+ * @return 0: 成功
+ */
+static int esp32_can_bus_deinit(void)
+{
+    twai_stop();
+    twai_driver_uninstall();
+    return 0;
+}
+
+/**
+ * @brief  发送 CAN 帧
+ *
+ * @return 0: 成功, -1: 发送失败
+ */
 static int esp32_can_bus_send(uint32_t id, const uint8_t *data, uint8_t len)
 {
     twai_message_t tx_msg;
@@ -107,11 +124,18 @@ static int esp32_can_bus_send(uint32_t id, const uint8_t *data, uint8_t len)
     return 0;
 }
 
-static int esp32_can_bus_receive(uint32_t *id, uint8_t *data, uint8_t *len)
+/**
+ * @brief  接收 CAN 帧
+ *
+ * @param  timeout_ms  0 为非阻塞（立即返回），> 0 为阻塞超时
+ * @return 1: 有帧, 0: 无帧/超时
+ */
+static int esp32_can_bus_receive(uint32_t *id, uint8_t *data, uint8_t *len,
+                                  uint32_t timeout_ms)
 {
     twai_message_t rx_msg;
 
-    if (twai_receive(&rx_msg, pdMS_TO_TICKS(10)) != ESP_OK)
+    if (twai_receive(&rx_msg, pdMS_TO_TICKS(timeout_ms)) != ESP_OK)
     {
         return 0;
     }
@@ -128,23 +152,6 @@ static int esp32_can_bus_receive(uint32_t *id, uint8_t *data, uint8_t *len)
     }
 
     return 1;
-}
-
-static int esp32_can_bus_task_create(void (*task)(void *), void *arg)
-{
-    BaseType_t ret = xTaskCreate(task, "can_bus", 4096, arg, 5, NULL);
-
-    return (ret == pdPASS) ? 0 : -1;
-}
-
-static uint32_t esp32_can_bus_get_ms(void)
-{
-    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-}
-
-static void esp32_can_bus_debug(const char *message, ...)
-{
-    (void)message;
 }
 
 /****************************************************************************/

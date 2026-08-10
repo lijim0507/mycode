@@ -22,7 +22,8 @@ typedef void (*can_bus_handler_t)(uint32_t id, const uint8_t *data, uint8_t len)
 /*                         Exported Functions                               */
 /****************************************************************************/
 
-void can_bus_init(void);
+void can_bus_init(uint32_t (*get_ms)(void),
+                  void (*debug)(const char *message, ...));
 void can_bus_task(void *arg);
 int  can_bus_send(uint32_t id, const uint8_t *data, uint8_t len);
 

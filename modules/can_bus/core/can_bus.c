@@ -78,12 +78,13 @@ static void can_bus_dispatch(uint32_t id, const uint8_t *data, uint8_t len)
 /*                         Exported Functions                               */
 /****************************************************************************/
 
-void can_bus_init(void)
+void can_bus_init(uint32_t (*get_ms)(void),
+                  void (*debug)(const char *message, ...))
 {
     g_can_driver = can_bus_port_get_driver();
     g_can_driver->init();
     uds_init(UDS_REQUEST_CAN_ID, UDS_RESPONSE_CAN_ID);
-    isotp_init_with_driver(g_can_driver);
+    isotp_init_with_driver(g_can_driver, get_ms, debug);
 }
 
 
@@ -97,7 +98,7 @@ void can_bus_task(void *arg)
 
     while (1)
     {
-        while (g_can_driver->receive(&id, data, &len))
+        while (g_can_driver->receive(&id, data, &len, 0))
         {
             can_bus_dispatch(id, data, len);
         }

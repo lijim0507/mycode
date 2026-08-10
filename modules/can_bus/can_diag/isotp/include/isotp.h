@@ -65,10 +65,14 @@ typedef struct
 /**
  * @brief 使用指定 port 驱动初始化 ISO-TP 模块
  *
- * @param driver port 驱动指针，send 和 get_ms 不可为 NULL
- * @return int ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
+ * @param driver  port 驱动指针（send 和 receive 不可为 NULL）
+ * @param get_ms  系统毫秒时钟函数（不可为 NULL，用于超时计时）
+ * @param debug   调试输出函数（可为 NULL 关闭调试）
+ * @return int    ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
  */
-int  isotp_init_with_driver(const can_port_driver_t *driver);
+int  isotp_init_with_driver(const can_port_driver_t *driver,
+                             uint32_t (*get_ms)(void),
+                             void (*debug)(const char *message, ...));
 
 /**
  * @brief 反初始化 ISO-TP 模块，释放 port 层资源

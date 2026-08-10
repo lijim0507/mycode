@@ -38,20 +38,22 @@ static void isotp_debug(const char *message);
 /*							Global Variables								*/
 /****************************************************************************/
 static const can_port_driver_t *g_isotp_driver;
+static uint32_t (*g_isotp_get_ms)(void);
+static void     (*g_isotp_debug_fn)(const char *message, ...);
 
 /****************************************************************************/
 /*							Static Functions    						    */
 /****************************************************************************/
 /**
- * @brief 输出调试信息，通过 port 层 debug 接口发送
+ * @brief 输出调试信息
  *
  * @param message 调试字符串
  */
 static void isotp_debug(const char *message)
 {
-    if (g_isotp_driver && g_isotp_driver->debug)
+    if (g_isotp_debug_fn)
     {
-        g_isotp_driver->debug(message);
+        g_isotp_debug_fn(message);
     }
 }
 
@@ -475,7 +477,7 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
                 handle->receive_bs_count = handle->receive_block_size;
                 isotp_send_flow_control(handle, PCI_FLOW_STATUS_CONTINUE, handle->receive_bs_count, handle->receive_st_min);
                 /* refresh timer cr */
-                handle->receive_timer_cr = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                handle->receive_timer_cr = g_isotp_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
             }
 
             break;
@@ -504,7 +506,7 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
             if (ISOTP_RET_OK == ret)
             {
                 /* refresh timer cr */
-                handle->receive_timer_cr = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                handle->receive_timer_cr = g_isotp_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
 
                 /* receive finished */
                 if (handle->receive_offset >= handle->receive_size)
@@ -537,7 +539,7 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
             if (ISOTP_RET_OK == ret)
             {
                 /* refresh bs timer */
-                handle->send_timer_bs = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+                handle->send_timer_bs = g_isotp_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
 
                 /* overflow */
                 if (PCI_FLOW_STATUS_OVERFLOW == message.as.flow_control.fs)
@@ -590,9 +592,11 @@ static void isotp_rx_process(isotp_handle_t *handle, uint8_t *data, uint8_t len)
  * @param driver port 驱动指针，send 和 get_ms 不可为 NULL
  * @return int ISOTP_RET_OK 成功，ISOTP_RET_ERROR 失败
  */
-int isotp_init_with_driver(const can_port_driver_t *driver)
+int isotp_init_with_driver(const can_port_driver_t *driver,
+                             uint32_t (*get_ms)(void),
+                             void (*debug)(const char *message, ...))
 {
-    if (!driver || !driver->send || !driver->get_ms)
+    if (!driver || !driver->send || !driver->receive || !get_ms)
     {
         return ISOTP_RET_ERROR;
     }
@@ -602,7 +606,9 @@ int isotp_init_with_driver(const can_port_driver_t *driver)
         isotp_deinit();
     }
 
-    g_isotp_driver = driver;
+    g_isotp_driver   = driver;
+    g_isotp_get_ms   = get_ms;
+    g_isotp_debug_fn = debug;
 
     return ISOTP_RET_OK;
 }
@@ -730,8 +736,8 @@ int isotp_send_with_id(isotp_handle_t *handle, uint32_t id, const uint8_t payloa
             handle->send_bs_remain = 0;
             handle->send_st_min = 0;
             handle->send_wtf_count = 0;
-            handle->send_timer_st = g_isotp_driver->get_ms();
-            handle->send_timer_bs = g_isotp_driver->get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
+            handle->send_timer_st = g_isotp_get_ms();
+            handle->send_timer_bs = g_isotp_get_ms() + ISO_TP_DEFAULT_RESPONSE_TIMEOUT;
             handle->send_protocol_result = ISOTP_PROTOCOL_RESULT_OK;
             handle->send_status = ISOTP_SEND_STATUS_INPROGRESS;
         }
@@ -799,7 +805,7 @@ void isotp_poll(isotp_handle_t *handle)
         return;
     }
 
-    now = g_isotp_driver->get_ms();
+    now = g_isotp_get_ms();
 
     /* receive remaining consecutive frames timeout handling */
     if (ISOTP_RECEIVE_STATUS_INPROGRESS == handle->receive_status)
