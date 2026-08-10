@@ -6,6 +6,7 @@
 /*								Includes									*/
 /****************************************************************************/
 #include "imu.h"
+#include "spi_port.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,17 +19,6 @@ extern "C" {
 /****************************************************************************/
 /*								Typedefs									*/
 /****************************************************************************/
-typedef struct {
-    int      spi_host;
-    int      miso_pin;
-    int      mosi_pin;
-    int      sclk_pin;
-    int      cs_pin;
-    uint32_t clock_hz;
-    uint8_t  spi_mode;
-    uint8_t  queue_size;
-    uint32_t max_transfer_size;
-} imu_port_config_t;
 
 /****************************************************************************/
 /*						Exproted Variables								*/
@@ -38,7 +28,11 @@ typedef struct {
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-const imu_driver_t *imu_port_get_driver(void);
+/**
+ * @brief  获取平台 SPI 驱动实例（符合 spi_port_driver_t 标准接口）
+ * @return 指向静态 const spi_port_driver_t 的指针
+ */
+const spi_port_driver_t *imu_port_get_driver(void);
 
 #ifdef __cplusplus
 }

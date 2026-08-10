@@ -20,23 +20,9 @@ extern "C" {
 /****************************************************************************/
 
 typedef struct {
-    float accel[3];
-    float gyro[3];
-} imu_data_t;
-
-typedef int (*imu_spi_send_t)(uint8_t *buf, uint16_t len);
-typedef int (*imu_spi_recv_t)(uint8_t *buf, uint16_t len);
-typedef int (*imu_set_cs_t)(uint8_t level);
-typedef void (*imu_delay_t)(uint32_t ms);
-
-typedef struct imu_driver {
-    int      (*init)(void *config);
-    imu_spi_send_t   spi_send;
-    imu_spi_recv_t   spi_recv;
-    imu_set_cs_t     set_cs;
-    imu_delay_t      delay_ms;
-    int      (*deinit)(void);
-} imu_driver_t;
+	float accel[3];
+	float gyro[3];
+} imu_data_t;  /* float accel[3] + float gyro[3] */
 
 /****************************************************************************/
 /*						Exproted Variables								*/
@@ -46,7 +32,13 @@ typedef struct imu_driver {
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-int   imu_init(const imu_driver_t *driver, void *port_cfg);
+/**
+ * @brief  初始化 IMU 模块
+ *         内部调用 spi_port_get_driver() 获取 SPI 驱动并初始化 ICM-42688。
+ * @return 0: 成功, -1: spi driver 无效, -2: SPI 硬件初始化失败,
+ *         -3: 芯片句柄分配失败, -4: 芯片配置失败
+ */
+int   imu_init(void);
 int   imu_deinit(void);
 void  imu_get_data(imu_data_t *p_data);
 void  imu_get_data_task(void);
