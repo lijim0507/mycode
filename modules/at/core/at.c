@@ -6,15 +6,11 @@
 
 #include <string.h>
 #include <stdbool.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/stream_buffer.h"
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
 #define AT_INTER_FRAME_MS    200                                /* 帧间超时(ms)                */
-#define AT_STREAM_BUF_SIZE   2048                               /* 接收流缓冲大小               */
+#define AT_RECV_BUF_SIZE     512                                /* 单次接收缓冲                 */
 /****************************************************************************/
 /*                              Typedefs                                    */
 /****************************************************************************/
@@ -37,17 +33,27 @@ void at_transaction_send(uint8_t * p_data, uint16_t len);
 /****************************************************************************/
 /*							Global Variables								*/
 /****************************************************************************/
-const at_uart_driver_t *g_at_driver;
+const uart_port_driver_t *g_at_driver;
 static bool                 g_initialized;
 static at_active_t          g_active;
-static StreamBufferHandle_t g_at_stream;
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
 
-int at_init(const at_uart_driver_t *driver, void *port_cfg)
+/**
+ * @brief  初始化 AT 模块
+ *
+ * 内部调用 at_port_get_driver() 获取平台 UART 驱动，
+ * port 负责配置 UART 硬件并通过 receive 提供 poll 接收。
+ *
+ * @return 0: 成功, -1: driver 无效, -2: 硬件初始化失败
+ */
+int at_init(void)
 {
-    if (!driver || !driver->init || !driver->send)
+    const uart_port_driver_t *driver;
+
+    driver = at_port_get_driver();
+    if (!driver || !driver->init || !driver->send || !driver->receive)
     {
         return -1;
     }
@@ -57,21 +63,13 @@ int at_init(const at_uart_driver_t *driver, void *port_cfg)
         at_deinit();
     }
 
-    g_at_stream = xStreamBufferCreate(AT_STREAM_BUF_SIZE, 1);
-    if (g_at_stream == NULL)
+    if (driver->init() != 0)
     {
-        return -3;
-    }
-
-    if (driver->init(port_cfg, at_uart_data_cb, NULL) != 0)
-    {
-        vStreamBufferDelete(g_at_stream);
-        g_at_stream = NULL;
         return -2;
     }
 
-    g_at_driver   = driver;
-    g_initialized = true;
+    g_at_driver    = driver;
+    g_initialized  = true;
     g_active.active = false;
 
     return 0;
@@ -89,52 +87,124 @@ int at_deinit(void)
         g_at_driver->deinit();
     }
 
-    if (g_at_stream)
-    {
-        vStreamBufferDelete(g_at_stream);
-        g_at_stream = NULL;
-    }
-
-    g_at_driver   = NULL;
-    g_initialized = false;
+    g_at_driver    = NULL;
+    g_initialized  = false;
     g_active.active = false;
 
     return 0;
 }
 
 /**
- * @brief 发送 AT 命令并等待响应，内部实现了发送、接收、帧解析和超时处理。
- * 
- * @param cmd  AT 命令字符串（不包含帧头尾）
- * @param resp  
- * @param timeout_ms 
- * @return at_result_t 
+ * @brief 发送 AT 命令并等待响应（poll 模式）
+ *
+ * 1. 发送命令
+ * 2. 轮询 g_at_driver->receive() 读取 UART 数据
+ * 3. 将收到的数据送入 at_parser_recv_data() 解析
+ * 4. 检查事务完成或超时
+ *
+ * @param cmd         AT 命令字符串
+ * @param resp        响应结构体（输出）
+ * @param timeout_ms  超时时间（ms）
+ * @return at_result_t
  */
-at_result_t at_exec(const char *cmd,at_response_t *resp,uint32_t timeout_ms)
+at_result_t at_exec(const char *cmd, at_response_t *resp, uint32_t timeout_ms)
 {
-    //发送命令
-    at_transaction_send((uint8_t *)cmd, strlen(cmd));
+    uint8_t recv_buf[AT_RECV_BUF_SIZE];
+    uint32_t recv_len;
+    uint32_t elapsed;
+    int      ret;
 
-    //等待响应（简化实现：实际应包含帧解析和超时处理）
+    /* 发送命令 */
+    at_transaction_send((uint8_t *)cmd, (uint16_t)strlen(cmd));
 
+    /* 轮询接收直到超时或响应完成 */
+    elapsed = 0;
+    while (elapsed < timeout_ms)
+    {
+        recv_len = AT_RECV_BUF_SIZE;
+        ret = g_at_driver->receive(recv_buf, &recv_len, AT_INTER_FRAME_MS);
+
+        if (ret > 0 && recv_len > 0)
+        {
+            at_frame_type_t frame_type;
+
+            /* 喂入解析器 */
+            for (uint32_t i = 0; i < recv_len; i++)
+            {
+                frame_type = at_parser_recv_data(recv_buf[i]);
+                if (frame_type == AT_FRAME_COMPLETE_RESP ||
+                    frame_type == AT_FRAME_COMPLETE_URC)
+                {
+                    return (frame_type == AT_FRAME_COMPLETE_RESP)
+                           ? AT_RESULT_OK : AT_RESULT_ERROR;
+                }
+            }
+        }
+
+        elapsed += AT_INTER_FRAME_MS;
+    }
+
+    return AT_RESULT_TIMEOUT;
 }
 
 /**
- * @brief 发送 AT 命令并等待响应，内部实现了发送、接收、帧解析和超时处理。
- * 
- * @param cmd 
- * @param expect 
- * @param resp 
- * @param timeout_ms 
- * @return at_result_t 
+ * @brief 发送 AT 命令（带预期内容），等待响应
+ *
+ * @param cmd         AT 命令字符串
+ * @param content     附加数据内容（如 SMS 正文）
+ * @param expect      期待的响应关键字
+ * @param resp        响应结构体（输出）
+ * @param timeout_ms  超时时间（ms）
+ * @return at_result_t
  */
-at_result_t at_exec_ex(const char *cmd, const char *expect, at_response_t *resp, uint32_t timeout_ms)
+at_result_t at_exec_ex(const char *cmd, const char *content,
+                        const char *expect, at_response_t *resp,
+                        uint32_t timeout_ms)
 {
-    //发送命令
-    at_transaction_send((uint8_t *)cmd, strlen(cmd));
+    uint8_t recv_buf[AT_RECV_BUF_SIZE];
+    uint32_t recv_len;
+    uint32_t elapsed;
+    int      ret;
 
+    /* 发送命令 */
+    at_transaction_send((uint8_t *)cmd, (uint16_t)strlen(cmd));
+
+    /* 如有附加内容，继续发送（如 SMS 正文以 Ctrl-Z 结束） */
+    if (content)
+    {
+        at_transaction_send((uint8_t *)content, (uint16_t)strlen(content));
+    }
+
+    /* 轮询接收 */
+    elapsed = 0;
+    while (elapsed < timeout_ms)
+    {
+        recv_len = AT_RECV_BUF_SIZE;
+        ret = g_at_driver->receive(recv_buf, &recv_len, AT_INTER_FRAME_MS);
+
+        if (ret > 0 && recv_len > 0)
+        {
+            at_frame_type_t frame_type;
+
+            for (uint32_t i = 0; i < recv_len; i++)
+            {
+                frame_type = at_parser_recv_data(recv_buf[i]);
+                if (frame_type == AT_FRAME_COMPLETE_RESP)
+                {
+                    return AT_RESULT_OK;
+                }
+                else if (frame_type == AT_FRAME_COMPLETE_URC)
+                {
+                    return AT_RESULT_ERROR;
+                }
+            }
+        }
+
+        elapsed += AT_INTER_FRAME_MS;
+    }
+
+    return AT_RESULT_TIMEOUT;
 }
-
 
 int at_register_urc(const char *prefix, at_urc_handler_t handler, void *user_data)
 {
@@ -144,26 +214,6 @@ int at_register_urc(const char *prefix, at_urc_handler_t handler, void *user_dat
 int at_unregister_urc(const char *prefix)
 {
     return at_parser_urc_unregister(prefix);
-}
-
-
-
-/****************************************************************************/
-/*							Static Functions    						    */
-/****************************************************************************/
-
-/*
- * Port 层接收回调：由 port 的 RX task 调用，将接收到的原始数据写入流缓冲。
- * 此回调在 port 层 task 上下文执行，仅做轻量数据搬运，不涉及解析。
- */
-static void at_uart_data_cb(const uint8_t *data, uint32_t len, void *user_ctx)
-{
-    (void)user_ctx;
-
-    if (g_at_stream)
-    {
-        xStreamBufferSend(g_at_stream, data, len, 0);
-    }
 }
 
 /****************************************************************************/

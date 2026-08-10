@@ -6,6 +6,7 @@
 /****************************************************************************/
 #include <stdint.h>
 #include <stddef.h>
+#include "uart_port.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,30 +59,19 @@ typedef void (*at_async_callback_t)(at_result_t result,
 typedef void (*at_urc_handler_t)(const char *line, void *user_data);
 
 
-/* 接收数据回调：port 层收到 UART 数据后调用此回调上抛给 core 层 */
-typedef void (*at_uart_recv_cb_t)(const uint8_t *data, uint32_t len, void *user_ctx);
-
-/* UART 抽象驱动，用于解耦 AT 核心与具体硬件 */
-typedef struct
-{
-    int (*init)(void *config, at_uart_recv_cb_t recv_cb, void *user_ctx);  /* 初始化 UART + 注册接收回调  */
-    int (*send)(const uint8_t *data, uint32_t len);                        /* 发送数据                     */
-    int (*deinit)(void);                                                   /* 反初始化 UART                */
-} at_uart_driver_t;
-
 /****************************************************************************/
 /*						Exproted Variables								*/
 /****************************************************************************/
 
 /* 由 at.c 初始化的 UART 驱动实例，at_frame.c / at_parser.c 通过此指针操作硬件 */
-extern const at_uart_driver_t *g_at_driver;
+extern const uart_port_driver_t *g_at_driver;
 
 /****************************************************************************/
 /*						Exproted Functions								*/
 /****************************************************************************/
 
 /* ---- 生命周期 ---- */
-int at_init(const at_uart_driver_t *driver, void *port_cfg);
+int at_init(void);
 int at_deinit(void);
 
 

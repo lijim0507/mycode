@@ -1,10 +1,12 @@
 
+
 #ifndef __AT_PORT_H_
 #define __AT_PORT_H_
 /****************************************************************************/
 /*								Includes									*/
 /****************************************************************************/
 #include "at.h"
+#include "uart_port.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,8 +28,11 @@ extern "C" {
 /*						Exproted Functions								*/
 /****************************************************************************/
 
-/* 获取平台 UART 驱动实例（静态单例） */
-const at_uart_driver_t *at_port_get_driver(void);
+/**
+ * @brief  获取平台 UART 驱动实例（符合 uart_port_driver_t 标准接口）
+ * @return 指向静态 const uart_port_driver_t 的指针
+ */
+const uart_port_driver_t *at_port_get_driver(void);
 
 #ifdef __cplusplus
 }
