@@ -42,8 +42,10 @@ const uds_service_t services_table[UDS_SERVICE_TABLE_SIZE] = {
  */
 uds_handler_result_t uds_diag_session_control(uds_request_t *req, uds_response_t *resp)
 {
+    /* 切换诊断会话 (0x01 Default / 0x02 Programming / 0x03 Extended) */
     uds_session_t requested_session;
 
+    /* 0x01 Default, 0x02 Programming, 0x03 Extended */
     if (req->sub_sid < 0x01 || req->sub_sid > 0x03)
     {
         uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
@@ -80,6 +82,7 @@ static const uds_data_identifier_t data_table[] = {
  */
 static uint16_t uds_did_from_data(const uint8_t *data)
 {
+    /* 从请求数据中提取 16 位大端 DID */
     return ((uint16_t)data[0] << 8) | (uint16_t)data[1];
 }
 
@@ -91,6 +94,7 @@ static uint16_t uds_did_from_data(const uint8_t *data)
  */
 static const uds_data_identifier_t *uds_find_did(uint16_t did)
 {
+    /* 在 DID 表中查找匹配条目 */
     uint16_t i;
     for (i = 0; i < sizeof(data_table) / sizeof(data_table[0]); i++)
     {
@@ -111,11 +115,13 @@ static const uds_data_identifier_t *uds_find_did(uint16_t did)
  */
 uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *resp)
 {
+    /* 按 DID 读取数据，含 session/security 门控 */
     uint16_t did;
     const uds_data_identifier_t *did_entry;
     uds_session_t        cur_session;
     uds_security_level_t cur_level;
 
+    /* DID 为 2 字节大端 */
     if (req->data_len < 2)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -134,6 +140,7 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
     cur_session = uds_get_session();
     cur_level   = uds_get_security_level();
 
+    /* UDS_SESSION_DEFAULT 表示不限制访问，否则必须匹配当前 session */
     if (did_entry->session_read != UDS_SESSION_DEFAULT)
     {
         if (cur_session != did_entry->session_read)
@@ -143,6 +150,7 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
         }
     }
 
+    /* UDS_SEC_LEVEL_LOCKED 表示不限制，否则必须匹配当前安全等级 */
     if (did_entry->level_read != UDS_SEC_LEVEL_LOCKED)
     {
         if (cur_level != did_entry->level_read)
@@ -172,6 +180,7 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
  */
 static uint8_t generate_random_byte(void)
 {
+    /* 生成伪随机种子值 */
     return (uint8_t)(rand() % 256);
 }
 
@@ -184,8 +193,10 @@ static uint8_t generate_random_byte(void)
  */
 uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *resp)
 {
+    /* 安全访问：请求种子 → 验证密钥 → 解锁安全等级 */
     static uint8_t seed_value = 0;
 
+    /* 奇数 sub_sid (0x01/0x03/0x05) 为请求种子 */
     if (req->sub_sid % 2 == 1 && req->sub_sid <= 0x05)
     {
         seed_value = generate_random_byte();
@@ -196,8 +207,10 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
 
         return UDS_HANDLER_DONE;
     }
+    /* 0x02 发送 Lv1 Key */
     else if (req->sub_sid == 0x02)
     {
+        /* key = seed + 5（示例算法） */
         if (req->data_len >= 1 && req->data_ptr[0] == (uint8_t)(seed_value + 5))
         {
             uds_set_security_level(UDS_SEC_LEVEL_1);
@@ -211,8 +224,10 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
             return UDS_HANDLER_NRC_SENT;
         }
     }
+    /* 0x04 发送 Lv2 Key */
     else if (req->sub_sid == 0x04)
     {
+        /* key = seed + 10（示例算法） */
         if (req->data_len >= 1 && req->data_ptr[0] == (uint8_t)(seed_value + 10))
         {
             uds_set_security_level(UDS_SEC_LEVEL_2);
@@ -227,6 +242,7 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
         }
     }
 
+    /* 其他 sub_sid (0x00/0x06..0xFF) 均不支持 */
     uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
     return UDS_HANDLER_NRC_SENT;
 }
@@ -244,11 +260,13 @@ uds_handler_result_t uds_security_access(uds_request_t *req, uds_response_t *res
  */
 uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *resp)
 {
+    /* 按 DID 写入数据，含 session/security 门控 */
     uint16_t did;
     const uds_data_identifier_t *did_entry;
     uds_session_t        cur_session;
     uds_security_level_t cur_level;
 
+    /* DID 为 2 字节大端 */
     if (req->data_len < 2)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -273,6 +291,7 @@ uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *re
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 写入需要匹配声明的安全等级 */
     if (did_entry->level_write != cur_level)
     {
         uds_send_negative_response(req->sid, NRC_SECURITY_ACCESS_DENIED);
@@ -281,6 +300,7 @@ uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *re
 
     {
         uint16_t write_len = req->data_len - 2;
+        /* 截断写入，只写 DID 声明长度内的数据 */
         if (write_len > did_entry->data_len)
         {
             write_len = did_entry->data_len;
@@ -307,6 +327,7 @@ uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *re
  */
 uds_handler_result_t uds_tester_present(uds_request_t *req, uds_response_t *resp)
 {
+    /* 诊断会话保活，维持当前 session 不超时 */
     resp->sid = req->sid + UDS_RESPONSE_SID_OFFSET;
     resp->data_len = 0;
 
@@ -319,6 +340,7 @@ uds_handler_result_t uds_tester_present(uds_request_t *req, uds_response_t *resp
 
 uds_handler_result_t uds_ecu_reset(uds_request_t *req, uds_response_t *resp)
 {
+    /* ECU 复位 (0x01 HardReset / 0x02 KeyOffOn / 0x03 SoftReset) */
     if (req->sub_sid != 0x01 && req->sub_sid != 0x02 && req->sub_sid != 0x03)
     {
         uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
@@ -329,6 +351,7 @@ uds_handler_result_t uds_ecu_reset(uds_request_t *req, uds_response_t *resp)
     resp->data_ptr[0] = req->sub_sid;
     resp->data_len = 1;
 
+    /* HardReset 调用后不返回（MCU 立即复位） */
     if (req->sub_sid == 0x01)
     {
         uds_port_ecu_reset();
@@ -343,6 +366,7 @@ uds_handler_result_t uds_ecu_reset(uds_request_t *req, uds_response_t *resp)
 
 uds_handler_result_t uds_communication_control(uds_request_t *req, uds_response_t *resp)
 {
+    /* 控制通信收发 (0x00 EnableAll / 0x01 EnableRxDisableTx / 0x03 DisableAll) */
     uint8_t comm_type;
 
     if (req->sub_sid != 0x00 && req->sub_sid != 0x01 && req->sub_sid != 0x03)
@@ -351,6 +375,7 @@ uds_handler_result_t uds_communication_control(uds_request_t *req, uds_response_
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 至少需要 communicationType 字段 */
     if (req->data_len < 1)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -359,6 +384,7 @@ uds_handler_result_t uds_communication_control(uds_request_t *req, uds_response_
 
     comm_type = req->data_ptr[0];
 
+    /* 0x01 Normal, 0x02 NetworkMgmt, 0x03 Both */
     if (comm_type < 0x01 || comm_type > 0x03)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_OUT_OF_RANGE);
@@ -389,9 +415,11 @@ static uint8_t           g_block_seq_expected  = 1;
 /* 桥接函数：将 routine 回调签名适配到 port 空函数 */
 static int uds_routine_erase_memory(const uint8_t *req_data, uint16_t req_len)
 {
+    /* 拆解 8 字节请求（addr+size 各 4 字节大端），桥接到 uds_port_flash_erase */
     uint32_t addr;
     uint32_t size;
 
+    /* addr(4 字节) + size(4 字节) = 8 字节大端 */
     if (req_len < 8)
     {
         return -1;
@@ -405,10 +433,9 @@ static int uds_routine_erase_memory(const uint8_t *req_data, uint16_t req_len)
 
 static int uds_routine_check_dependencies(const uint8_t *req_data, uint16_t req_len)
 {
+    /* 刷写后完整性校验，桥接到 uds_port_flash_verify */
     (void)req_data;
     (void)req_len;
-
-    /* 校验已写入区域 */
     return uds_port_flash_verify(g_flash_base_addr, g_flash_write_offset, NULL);
 }
 
@@ -422,6 +449,7 @@ const uds_routine_t routine_table[] = {
  */
 void uds_flash_reset_state(void)
 {
+    /* 将刷写状态机复位到 IDLE（切回 Default Session 时调用） */
     g_flash_state        = UDS_FLASH_IDLE;
     g_flash_base_addr    = 0;
     g_flash_total_size   = 0;
@@ -431,6 +459,7 @@ void uds_flash_reset_state(void)
 
 uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *resp)
 {
+    /* 例程控制：查 routine_table → 门控校验 → 执行 → 状态推进 */
     uint16_t routine_id;
     uint8_t  i;
     const uds_routine_t *routine = NULL;
@@ -442,6 +471,7 @@ uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *res
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* routineId 为 2 字节大端 */
     if (req->data_len < 2)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -500,7 +530,7 @@ uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *res
     resp->data_ptr[2] = (uint8_t)(routine_id & 0xFF);
     resp->data_len = 3;
 
-    /* EraseMemory 万能复位 */
+    /* EraseMemory (0xFF00): 任意状态 -> IDLE，万能复位 */
     if (routine_id == 0xFF00)
     {
         g_flash_state        = UDS_FLASH_IDLE;
@@ -509,7 +539,7 @@ uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *res
         g_flash_write_offset = 0;
         g_block_seq_expected = 1;
     }
-    /* CheckProgrammingDependencies */
+    /* CheckProgrammingDependencies (0xFF01): 仅 TRANSFER_COMPLETE 可调 */
     else if (routine_id == 0xFF01)
     {
         if (g_flash_state != UDS_FLASH_TRANSFER_COMPLETE)
@@ -529,6 +559,7 @@ uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *res
 
 uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *resp)
 {
+    /* 下载请求：解析地址/大小/格式 → 状态 IDLE→DOWNLOAD_REQUESTED */
     uint8_t  dfi;
     uint8_t  alfi;
     uint8_t  addr_len;
@@ -539,12 +570,14 @@ uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *re
     uint32_t sector_size;
     uint8_t  idx;
 
+    /* 仅 IDLE 时可发起新下载，重复下载需先 EraseMemory 复位 */
     if (g_flash_state != UDS_FLASH_IDLE)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_SEQUENCE_ERROR);
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 至少需要 dfi + alfi */
     if (req->data_len < 2)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -554,6 +587,7 @@ uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *re
     dfi  = req->data_ptr[0];
     alfi = req->data_ptr[1];
 
+    /* 仅支持无压缩无加密 (compression=0, encrypt=0) */
     if ((dfi & 0x0F) != 0x00)
     {
         /* 不支持压缩/加密 */
@@ -564,12 +598,14 @@ uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *re
     addr_len = (alfi >> 4) & 0x0F;
     size_len = alfi & 0x0F;
 
+    /* 地址和长度字段各 1~4 字节 */
     if (addr_len == 0 || size_len == 0 || addr_len > 4 || size_len > 4)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_OUT_OF_RANGE);
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 数据长度必须 >= 声明的地址+大小字段总长 */
     if (req->data_len < (uint16_t)(2 + addr_len + size_len))
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -590,6 +626,7 @@ uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *re
         memory_size = (memory_size << 8) | req->data_ptr[2 + addr_len + idx];
     }
 
+    /* 下载大小不能为 0 */
     if (memory_size == 0)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_OUT_OF_RANGE);
@@ -623,10 +660,12 @@ uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *re
 
 uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp)
 {
+    /* 传输数据块：校验 blockSeq → 写入 Flash → 递增计数器 */
     uint8_t  block_seq;
     uint16_t payload_len;
     int      ret;
 
+    /* 仅 DOWNLOAD_REQUESTED (首块) 或 TRANSFERRING (后续块) 可接收 */
     if (g_flash_state != UDS_FLASH_DOWNLOAD_REQUESTED
         && g_flash_state != UDS_FLASH_TRANSFERRING)
     {
@@ -634,6 +673,7 @@ uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp)
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 至少需要 blockSequenceCounter */
     if (req->data_len < 1)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -643,18 +683,21 @@ uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp)
     block_seq   = req->data_ptr[0];
     payload_len = req->data_len - 1;
 
+    /* 计数器从 1 开始，0 非法 */
     if (block_seq == 0)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_OUT_OF_RANGE);
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 序号不连续（丢块或重复） */
     if (block_seq != g_block_seq_expected)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_SEQUENCE_ERROR);
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 超出 0x34 声明的总大小 */
     if (g_flash_write_offset + payload_len > g_flash_total_size)
     {
         uds_send_negative_response(req->sid, NRC_INCORRECT_MESSAGE_LENGTH);
@@ -664,6 +707,7 @@ uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp)
     ret = uds_port_flash_write(g_flash_base_addr + g_flash_write_offset,
                                req->data_ptr + 1, payload_len);
 
+    /* Flash 写入失败 */
     if (ret != 0)
     {
         uds_send_negative_response(req->sid, NRC_GENERAL_PROGRAMMING_FAILURE);
@@ -673,6 +717,7 @@ uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp)
     g_flash_write_offset += payload_len;
 
     g_block_seq_expected = (uint8_t)(block_seq + 1);
+    /* 255+1 回绕到 1 */
     if (g_block_seq_expected == 0)
     {
         g_block_seq_expected = 1;
@@ -693,14 +738,17 @@ uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp)
 
 uds_handler_result_t uds_request_transfer_exit(uds_request_t *req, uds_response_t *resp)
 {
+    /* 退出传输：校验 Flash → 状态 TRANSFERRING→TRANSFER_COMPLETE */
     uint32_t crc;
 
+    /* 仅 TRANSFERRING 时可退出传输 */
     if (g_flash_state != UDS_FLASH_TRANSFERRING)
     {
         uds_send_negative_response(req->sid, NRC_REQUEST_SEQUENCE_ERROR);
         return UDS_HANDLER_NRC_SENT;
     }
 
+    /* 可选校验，port 层无实作时直接返回 0 */
     (void)uds_port_flash_verify(g_flash_base_addr, g_flash_write_offset, &crc);
 
     g_flash_state = UDS_FLASH_TRANSFER_COMPLETE;
@@ -717,6 +765,7 @@ uds_handler_result_t uds_request_transfer_exit(uds_request_t *req, uds_response_
 
 uds_handler_result_t uds_control_dtc_setting(uds_request_t *req, uds_response_t *resp)
 {
+    /* DTC 诊断故障码开关 (0x01 On / 0x02 Off) */
     if (req->sub_sid != 0x01 && req->sub_sid != 0x02)
     {
         uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
