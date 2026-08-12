@@ -38,6 +38,12 @@ typedef struct
     uint32_t response_id;
 } uds_port_config_t;
 
+typedef struct
+{
+    uint32_t request_can_id;
+    uint32_t response_can_id;
+} uds_config_t;
+
 /****************************************************************************/
 /*						Exported Functions								*/
 /****************************************************************************/
@@ -45,9 +51,10 @@ typedef struct
 /**
  * @brief 初始化 UDS 层，包括 ISO-TP 初始化、句柄配置和回调注册
  *
+ * @param config UDS 配置参数指针
  * @return int 0 表示成功，负值表示失败
  */
-int  uds_init(void);
+int  uds_init(const uds_config_t *config);
 
 /**
  * @brief 反初始化 UDS 层，释放 ISO-TP 资源
@@ -115,6 +122,11 @@ void                 uds_set_session(uds_session_t session);
  * @param level 目标安全等级
  */
 void                 uds_set_security_level(uds_security_level_t level);
+
+/**
+ * @brief 复位刷写状态机到 IDLE
+ */
+void uds_flash_reset_state(void);
 
 /**
  * @brief 通过 ISO-TP 发送 UDS 消息
