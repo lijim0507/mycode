@@ -76,14 +76,26 @@ static void uds_on_recv(uint8_t *data, uint16_t len)
  *
  * @return int 0 表示成功，负值表示失败
  */
-int uds_init(uint32_t request_can_id, uint32_t response_can_id)
+int uds_init(const uds_config_t *config)
 {
+    uint32_t request_can_id;
+    uint32_t response_can_id;
 
     if (g_initialized)
     {
         uds_deinit();
     }
 
+    if (config != NULL)
+    {
+        request_can_id  = config->request_can_id;
+        response_can_id = config->response_can_id;
+    }
+    else
+    {
+        request_can_id  = 0;
+        response_can_id = 0;
+    }
 
     isotp_init_handle(&g_isotp_handle, request_can_id, response_can_id,
                           g_uds_send_buf, ISOTP_BUF_SIZE,
@@ -329,6 +341,7 @@ void uds_set_session(uds_session_t session)
     if (session == UDS_SESSION_DEFAULT)
     {
         g_current_security_level = UDS_SEC_LEVEL_LOCKED;
+        uds_flash_reset_state();
     }
 }
 
