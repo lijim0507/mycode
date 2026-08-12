@@ -106,10 +106,7 @@ void can_bus_task(void *arg)
 }
 
 
-int can_bus_send(uint32_t id, const uint8_t *data, uint8_t len)
-{
-    return g_can_driver->send(id, data, len);
-}
+
 
 /****************************************************************************/
 /*                              EOF                                         */

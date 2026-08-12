@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 交流语言
+
+所有对话、代码注释、文档均以**中文**进行。代码标识符（变量名、函数名、类型名、宏）沿用
+英文 `snake_case`。
+
 ## Project nature
 
 This is **not a buildable product**. It is a personal collection of reusable embedded driver
@@ -14,6 +19,7 @@ project later. Treat it as a library of code fragments, not an application.
 that it builds.
 
 Authoritative guides to read before making non-trivial changes:
+
 - `MODULE_DESIGN.md` — the three-layer architecture, driver-injection / transport / adapter /
   handle / poll / callback / service-table patterns, and how to choose between them.
 - `CODING_STYLE.md` — naming, section layout, typedef/brace rules.
@@ -74,8 +80,7 @@ ESP-IDF QEMU image, and `.vscode/` sets `idf.pythonInstallPath`.
 - **One module per task.** Don't cross-module refactor unless the user explicitly asks.
 - **New code is `snake_case`.** Types are `typedef`'d with `_t`. Enums are `UPPER_CASE` with a
   module prefix. Static module globals use the `g_` prefix. Braces always go on their own line
-  (Allman). New `.c`/`.h` files use the `Includes / Macros / Typedefs / Prototypes / Global
-  Variables / Exported Functions / Static Functions / EOF` section scaffold from
+  (Allman). New `.c`/`.h` files use the `Includes / Macros / Typedefs / Prototypes / Global Variables / Exported Functions / Static Functions / EOF` section scaffold from
   `CODING_STYLE.md`.
 - **Header guards** are `#ifndef __FILENAME_H_`, not `#pragma once`.
 - **Comments only when the *why* is non-obvious.** `AGENTS.md` and `CODING_STYLE.md` both
