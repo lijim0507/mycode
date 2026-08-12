@@ -64,12 +64,10 @@ uds_handler_result_t uds_diag_session_control(uds_request_t *req, uds_response_t
 /*				   		UDS 0x22 读数据标识符                                 */
 /****************************************************************************/
 
-#define UDS_DATA_TABLE_MAX  2
-
 static uint8_t data_buf_1[3]  = {0x10, 0x11, 0x12};
 static uint8_t data_buf_2[10] = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29};
 
-static const uds_data_identifier_t data_table[UDS_DATA_TABLE_MAX] = {
+static const uds_data_identifier_t data_table[] = {
     {0xF3A0, data_buf_1, 3,  UDS_SESSION_DEFAULT,   UDS_SESSION_EXTENDED, UDS_SEC_LEVEL_LOCKED, UDS_SEC_LEVEL_1},
     {0xF3A1, data_buf_2, 10, UDS_SESSION_DEFAULT,   UDS_SESSION_EXTENDED, UDS_SEC_LEVEL_LOCKED, UDS_SEC_LEVEL_1},
 };
@@ -94,7 +92,7 @@ static uint16_t uds_did_from_data(const uint8_t *data)
 static const uds_data_identifier_t *uds_find_did(uint16_t did)
 {
     uint16_t i;
-    for (i = 0; i < UDS_DATA_TABLE_MAX; i++)
+    for (i = 0; i < sizeof(data_table) / sizeof(data_table[0]); i++)
     {
         if (data_table[i].did == did)
         {
@@ -387,7 +385,6 @@ static uint32_t          g_flash_total_size    = 0;
 static uint32_t          g_flash_write_offset  = 0;
 static uint8_t           g_block_seq_expected  = 1;
 
-#define UDS_ROUTINE_TABLE_MAX  2
 
 /* 桥接函数：将 routine 回调签名适配到 port 空函数 */
 static int uds_routine_erase_memory(const uint8_t *req_data, uint16_t req_len)
@@ -400,10 +397,8 @@ static int uds_routine_erase_memory(const uint8_t *req_data, uint16_t req_len)
         return -1;
     }
 
-    addr = ((uint32_t)req_data[0] << 24) | ((uint32_t)req_data[1] << 16)
-         | ((uint32_t)req_data[2] << 8)  |  (uint32_t)req_data[3];
-    size = ((uint32_t)req_data[4] << 24) | ((uint32_t)req_data[5] << 16)
-         | ((uint32_t)req_data[6] << 8)  |  (uint32_t)req_data[7];
+    addr = ((uint32_t)req_data[0] << 24) | ((uint32_t)req_data[1] << 16) | ((uint32_t)req_data[2] << 8)  |  (uint32_t)req_data[3];
+    size = ((uint32_t)req_data[4] << 24) | ((uint32_t)req_data[5] << 16) | ((uint32_t)req_data[6] << 8)  |  (uint32_t)req_data[7];
 
     return uds_port_flash_erase(addr, size);
 }
@@ -417,14 +412,10 @@ static int uds_routine_check_dependencies(const uint8_t *req_data, uint16_t req_
     return uds_port_flash_verify(g_flash_base_addr, g_flash_write_offset, NULL);
 }
 
-const uds_routine_t routine_table[UDS_ROUTINE_TABLE_MAX] = {
-    {0xFF00, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "EraseMemory",
-     uds_routine_erase_memory},
-    {0xFF01, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "CheckProgrammingDependencies",
-     uds_routine_check_dependencies},
+const uds_routine_t routine_table[] = {
+    {0xFF00, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "EraseMemory", uds_routine_erase_memory},
+    {0xFF01, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "CheckProgrammingDependencies", uds_routine_check_dependencies},
 };
-
-const uint8_t routine_table_size = UDS_ROUTINE_TABLE_MAX;
 
 /**
  * @brief 复位刷写状态机到 IDLE（由 uds.c 在切回 Default Session 时调用）
@@ -444,16 +435,10 @@ uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *res
     uint8_t  i;
     const uds_routine_t *routine = NULL;
 
+    /* 0x01 startRoutine 以外暂不支持 */
     if (req->sub_sid != 0x01)
     {
-        if (req->sub_sid == 0x02 || req->sub_sid == 0x03)
-        {
-            uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
-        }
-        else
-        {
-            uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
-        }
+        uds_send_negative_response(req->sid, NRC_SUB_SERVICE_NOT_SUPPORTED);
         return UDS_HANDLER_NRC_SENT;
     }
 
@@ -465,7 +450,7 @@ uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *res
 
     routine_id = ((uint16_t)req->data_ptr[0] << 8) | (uint16_t)req->data_ptr[1];
 
-    for (i = 0; i < routine_table_size; i++)
+    for (i = 0; i < (sizeof(routine_table) / sizeof(routine_table[0])); i++)
     {
         if (routine_table[i].routine_id == routine_id)
         {
