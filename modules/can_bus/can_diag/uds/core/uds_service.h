@@ -30,6 +30,16 @@ typedef struct
     uds_security_level_t level_write;
 } uds_data_identifier_t;
 
+typedef struct
+{
+    uint16_t              routine_id;
+    uds_session_t         session;
+    uds_security_level_t  security;
+    const char           *name;
+
+    int (*start)(const uint8_t *req_data, uint16_t req_len);
+} uds_routine_t;
+
 /****************************************************************************/
 /*						Exported Functions								*/
 /****************************************************************************/
@@ -84,6 +94,17 @@ uds_handler_result_t uds_read_data_by_id(uds_request_t *req, uds_response_t *res
  * @return uds_handler_result_t 处理结果
  */
 uds_handler_result_t uds_write_data_by_id(uds_request_t *req, uds_response_t *resp);
+
+uds_handler_result_t uds_ecu_reset(uds_request_t *req, uds_response_t *resp);
+uds_handler_result_t uds_communication_control(uds_request_t *req, uds_response_t *resp);
+uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *resp);
+uds_handler_result_t uds_request_download(uds_request_t *req, uds_response_t *resp);
+uds_handler_result_t uds_transfer_data(uds_request_t *req, uds_response_t *resp);
+uds_handler_result_t uds_request_transfer_exit(uds_request_t *req, uds_response_t *resp);
+uds_handler_result_t uds_control_dtc_setting(uds_request_t *req, uds_response_t *resp);
+
+extern const uds_routine_t routine_table[];
+extern const uint8_t       routine_table_size;
 
 #ifdef __cplusplus
 }
