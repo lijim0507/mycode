@@ -11,71 +11,8 @@
 #include <stdlib.h>
 
 /****************************************************************************/
-/*								Macros										*/
+/*                        服务总表 (Services Table)                         */
 /****************************************************************************/
-
-#define UDS_DATA_TABLE_MAX  2
-
-/****************************************************************************/
-/*								Typedefs									*/
-/****************************************************************************/
-
-/****************************************************************************/
-/*							Global Variables								*/
-/****************************************************************************/
-static uint8_t data_buf_1[3]  = {0x10, 0x11, 0x12};
-static uint8_t data_buf_2[10] = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29};
-
-static const uds_data_identifier_t data_table[UDS_DATA_TABLE_MAX] = {
-    {0xF3A0, data_buf_1, 3,  UDS_SESSION_DEFAULT,   UDS_SESSION_EXTENDED, UDS_SEC_LEVEL_LOCKED, UDS_SEC_LEVEL_1},
-    {0xF3A1, data_buf_2, 10, UDS_SESSION_DEFAULT,   UDS_SESSION_EXTENDED, UDS_SEC_LEVEL_LOCKED, UDS_SEC_LEVEL_1},
-};
-
-/* ===== 刷写状态机 ===== */
-static uds_flash_state_t g_flash_state         = UDS_FLASH_IDLE;
-static uint32_t          g_flash_base_addr     = 0;
-static uint32_t          g_flash_total_size    = 0;
-static uint32_t          g_flash_write_offset  = 0;
-static uint8_t           g_block_seq_expected  = 1;
-
-#define UDS_ROUTINE_TABLE_MAX  2
-
-/* 桥接函数：将 routine 回调签名适配到 port 空函数 */
-static int uds_routine_erase_memory(const uint8_t *req_data, uint16_t req_len)
-{
-    uint32_t addr;
-    uint32_t size;
-
-    if (req_len < 8)
-    {
-        return -1;
-    }
-
-    addr = ((uint32_t)req_data[0] << 24) | ((uint32_t)req_data[1] << 16)
-         | ((uint32_t)req_data[2] << 8)  |  (uint32_t)req_data[3];
-    size = ((uint32_t)req_data[4] << 24) | ((uint32_t)req_data[5] << 16)
-         | ((uint32_t)req_data[6] << 8)  |  (uint32_t)req_data[7];
-
-    return uds_port_flash_erase(addr, size);
-}
-
-static int uds_routine_check_dependencies(const uint8_t *req_data, uint16_t req_len)
-{
-    (void)req_data;
-    (void)req_len;
-
-    /* 校验已写入区域 */
-    return uds_port_flash_verify(g_flash_base_addr, g_flash_write_offset, NULL);
-}
-
-const uds_routine_t routine_table[UDS_ROUTINE_TABLE_MAX] = {
-    {0xFF00, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "EraseMemory",
-     uds_routine_erase_memory},
-    {0xFF01, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "CheckProgrammingDependencies",
-     uds_routine_check_dependencies},
-};
-
-const uint8_t routine_table_size = UDS_ROUTINE_TABLE_MAX;
 
 const uds_service_t services_table[UDS_SERVICE_TABLE_SIZE] = {
     [0x10] = {UDS_SERVICE_ID_DIAGNOSTIC_SESSION_CONTROL, UDS_SERVICE_TYPE_SID_SUB,     uds_diag_session_control},
@@ -92,20 +29,8 @@ const uds_service_t services_table[UDS_SERVICE_TABLE_SIZE] = {
     [0x85] = {UDS_SERVICE_ID_CONTROL_DTC_SETTING,        UDS_SERVICE_TYPE_SID_SUB,     uds_control_dtc_setting},
 };
 
-/**
- * @brief 复位刷写状态机到 IDLE
- */
-void uds_flash_reset_state(void)
-{
-    g_flash_state        = UDS_FLASH_IDLE;
-    g_flash_base_addr    = 0;
-    g_flash_total_size   = 0;
-    g_flash_write_offset = 0;
-    g_block_seq_expected = 1;
-}
-
 /****************************************************************************/
-/*					   	UDS 0x10 诊断会话控制服务处理函数					    */
+/*					   	UDS 0x10 诊断会话控制                                */
 /****************************************************************************/
 
 /**
@@ -136,8 +61,18 @@ uds_handler_result_t uds_diag_session_control(uds_request_t *req, uds_response_t
 }
 
 /****************************************************************************/
-/*				   		UDS 0x22 读数据标识符服务处理函数					    */
+/*				   		UDS 0x22 读数据标识符                                 */
 /****************************************************************************/
+
+#define UDS_DATA_TABLE_MAX  2
+
+static uint8_t data_buf_1[3]  = {0x10, 0x11, 0x12};
+static uint8_t data_buf_2[10] = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29};
+
+static const uds_data_identifier_t data_table[UDS_DATA_TABLE_MAX] = {
+    {0xF3A0, data_buf_1, 3,  UDS_SESSION_DEFAULT,   UDS_SESSION_EXTENDED, UDS_SEC_LEVEL_LOCKED, UDS_SEC_LEVEL_1},
+    {0xF3A1, data_buf_2, 10, UDS_SESSION_DEFAULT,   UDS_SESSION_EXTENDED, UDS_SEC_LEVEL_LOCKED, UDS_SEC_LEVEL_1},
+};
 
 /**
  * @brief 从请求数据中提取 16 位数据标识符 (DID)
@@ -444,6 +379,64 @@ uds_handler_result_t uds_communication_control(uds_request_t *req, uds_response_
 /****************************************************************************/
 /*                    UDS 0x31 Routine Control                             */
 /****************************************************************************/
+
+/* ===== 刷写状态机（跨 0x34/0x36/0x37 共享） ===== */
+static uds_flash_state_t g_flash_state         = UDS_FLASH_IDLE;
+static uint32_t          g_flash_base_addr     = 0;
+static uint32_t          g_flash_total_size    = 0;
+static uint32_t          g_flash_write_offset  = 0;
+static uint8_t           g_block_seq_expected  = 1;
+
+#define UDS_ROUTINE_TABLE_MAX  2
+
+/* 桥接函数：将 routine 回调签名适配到 port 空函数 */
+static int uds_routine_erase_memory(const uint8_t *req_data, uint16_t req_len)
+{
+    uint32_t addr;
+    uint32_t size;
+
+    if (req_len < 8)
+    {
+        return -1;
+    }
+
+    addr = ((uint32_t)req_data[0] << 24) | ((uint32_t)req_data[1] << 16)
+         | ((uint32_t)req_data[2] << 8)  |  (uint32_t)req_data[3];
+    size = ((uint32_t)req_data[4] << 24) | ((uint32_t)req_data[5] << 16)
+         | ((uint32_t)req_data[6] << 8)  |  (uint32_t)req_data[7];
+
+    return uds_port_flash_erase(addr, size);
+}
+
+static int uds_routine_check_dependencies(const uint8_t *req_data, uint16_t req_len)
+{
+    (void)req_data;
+    (void)req_len;
+
+    /* 校验已写入区域 */
+    return uds_port_flash_verify(g_flash_base_addr, g_flash_write_offset, NULL);
+}
+
+const uds_routine_t routine_table[UDS_ROUTINE_TABLE_MAX] = {
+    {0xFF00, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "EraseMemory",
+     uds_routine_erase_memory},
+    {0xFF01, UDS_SESSION_PROGRAMMING, UDS_SEC_LEVEL_2, "CheckProgrammingDependencies",
+     uds_routine_check_dependencies},
+};
+
+const uint8_t routine_table_size = UDS_ROUTINE_TABLE_MAX;
+
+/**
+ * @brief 复位刷写状态机到 IDLE（由 uds.c 在切回 Default Session 时调用）
+ */
+void uds_flash_reset_state(void)
+{
+    g_flash_state        = UDS_FLASH_IDLE;
+    g_flash_base_addr    = 0;
+    g_flash_total_size   = 0;
+    g_flash_write_offset = 0;
+    g_block_seq_expected = 1;
+}
 
 uds_handler_result_t uds_routine_control(uds_request_t *req, uds_response_t *resp)
 {
