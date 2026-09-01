@@ -27,7 +27,6 @@ void app_main(void)
 }
 
 
-
 //----------------------------------------------------------------------------
 // 二值信号量句柄--demo
 osSemaphoreId_t demo_semaphore_handle;
