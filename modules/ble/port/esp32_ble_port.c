@@ -3,11 +3,16 @@
 /****************************************************************************/
 #include "ble_port.h"
 
+#include <stdio.h>
 #include <string.h>
 
-#include "common.h"
 #include "esp_log.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+
+#include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
 #include "services/gap/ble_svc_gap.h"
@@ -17,24 +22,30 @@
 #include "nimble/ble.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "store/config/ble_store_config.h"
 
 /****************************************************************************/
 /*								Macros										*/
 /****************************************************************************/
 #define TAG "BLE_PORT"
+
+#define ESP32_BLE_UUID128_LEN       16
+
+/* 单次写入可接收的最大字节数 */
+#ifndef ESP32_BLE_CHR_WRITE_MAX
+#define ESP32_BLE_CHR_WRITE_MAX     64
+#endif
+
+/* ATT 头部开销，分片时从 MTU 中扣除 */
+#define ESP32_BLE_ATT_HEADER_LEN    3
 /****************************************************************************/
 /*								Typedefs									*/
 /****************************************************************************/
 
-typedef void (*ble_access_cb_t)(uint16_t conn_handle, uint16_t attr_handle,
-                                 void *ctxt, void *arg);
-typedef void (*ble_register_cb_t)(void *ctxt, void *arg);
-typedef void (*ble_subscribe_cb_t)(void *event);
-
+/* core 送来的一次性回调，保存在 port 里供 NimBLE 事件分发时使用 */
 typedef struct {
-    ble_access_cb_t   access_cb;
-    ble_register_cb_t register_cb;
     ble_subscribe_cb_t subscribe_cb;
+    ble_conn_cb_t      conn_cb;
 } ble_cb_ctx_t;
 
 /****************************************************************************/
@@ -44,18 +55,23 @@ typedef struct {
 static int  esp32_ble_init(void *config);
 static int  esp32_ble_deinit(void);
 static int  esp32_ble_adv_start(void *adv_cfg);
-static int  esp32_ble_svc_init(void *svc_table, void *access_cb,
-                                void *register_cb, void *subscribe_cb);
+static int  esp32_ble_svc_init(const ble_svc_table_t *table,
+                                ble_subscribe_cb_t subscribe_cb,
+                                ble_conn_cb_t conn_cb);
 static int  esp32_ble_notify(uint16_t conn_handle, uint16_t attr_handle,
                               const uint8_t *data, uint16_t len);
 
 static void on_stack_reset(int reason);
 static void on_stack_sync(void);
 static void ble_host_config_init(void);
+static int  gap_init(void);
 static int  gap_event_handler(struct ble_gap_event *event, void *arg);
-static int  gatt_svr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+static int  gatt_svc_init(const ble_svc_table_t *table);
+static int  gatt_table_build(const ble_svc_table_t *table);
+static int  gatt_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                                 struct ble_gatt_access_ctxt *ctxt, void *arg);
 static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg);
+static ble_gatt_chr_flags gatt_convert_flags(uint16_t flags);
 
 static void format_addr(char *addr_str, uint8_t addr[]);
 static void print_conn_desc(struct ble_gap_conn_desc *desc);
@@ -67,53 +83,18 @@ static void gap_start_advertising(void);
 
 static ble_cb_ctx_t g_ble_cbs;
 
+static SemaphoreHandle_t g_notify_mutex;
+
 static uint8_t own_addr_type;
 static uint8_t addr_val[6];
 static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'e', 's', 'p', 'r', 'e', 's', 's', 'i', 'f', '.', 'c', 'o', 'm'};
 
-/* GATT 服务 UUID */
-#define SVC_UUID(...) BLE_UUID128_INIT(__VA_ARGS__)
-#define CHR_UUID(...) BLE_UUID128_INIT(__VA_ARGS__)
-
-static const ble_uuid128_t gatt_svr_svc1_uuid =
-    SVC_UUID(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-             0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10);
-
-static const ble_uuid128_t gatt_svr_chr1_uuid =
-    CHR_UUID(0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-             0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20);
-
-static uint16_t gatt_svr_chr1_val_handle;
-
-static const ble_uuid128_t gatt_svr_chr2_uuid =
-    CHR_UUID(0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
-             0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30);
-
-static uint16_t gatt_svr_chr2_val_handle;
-
-static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = &gatt_svr_svc1_uuid.u,
-        .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                .uuid = &gatt_svr_chr1_uuid.u,
-                .access_cb = gatt_svr_access_cb,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_READ |
-                         BLE_GATT_CHR_F_NOTIFY,
-                .val_handle = &gatt_svr_chr1_val_handle,
-            },
-            {
-                .uuid = &gatt_svr_chr2_uuid.u,
-                .access_cb = gatt_svr_access_cb,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_READ,
-                .val_handle = &gatt_svr_chr2_val_handle,
-            },
-            { 0 },
-        },
-    },
-    { 0 },
-};
+/* GATT 描述表由已注册服务在运行期构建。
+   NimBLE 保存的是这些结构的指针而不是副本，所以不能放栈上，必须保持静态存储期。 */
+static ble_uuid128_t            g_svc_uuid[BLE_SVC_MAX];
+static ble_uuid128_t            g_chr_uuid[BLE_SVC_MAX][BLE_SVC_MAX_CHR];
+static struct ble_gatt_chr_def  g_chr_defs[BLE_SVC_MAX][BLE_SVC_MAX_CHR + 1];
+static struct ble_gatt_svc_def  g_svc_defs[BLE_SVC_MAX + 1];
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
@@ -121,12 +102,12 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 const ble_driver_t *ble_port_get_driver(void)
 {
     static const ble_driver_t driver = {
-        .init      = esp32_ble_init,
-        .deinit    = esp32_ble_deinit,
-        .run       = nimble_port_run,
-        .adv_start = esp32_ble_adv_start,
-        .svc_init  = esp32_ble_svc_init,
-        .notify    = esp32_ble_notify,
+        .init       = esp32_ble_init,
+        .deinit     = esp32_ble_deinit,
+        .run        = nimble_port_run,
+        .adv_start  = esp32_ble_adv_start,
+        .svc_init   = esp32_ble_svc_init,
+        .notify     = esp32_ble_notify,
     };
     return &driver;
 }
@@ -143,6 +124,14 @@ static int esp32_ble_init(void *config)
     if (ret != ESP_OK) {
         return -1;
     }
+
+    if (!g_notify_mutex) {
+        g_notify_mutex = xSemaphoreCreateMutex();
+        if (!g_notify_mutex) {
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -159,22 +148,36 @@ static int esp32_ble_adv_start(void *adv_cfg)
     return 0;
 }
 
-static int esp32_ble_svc_init(void *svc_table, void *access_cb,
-                               void *register_cb, void *subscribe_cb)
+/**
+ * @brief  初始化 GAP/GATT 并把服务表注册进协议栈。
+ *
+ * @param  table        core 维护的服务表，不能为空。
+ * @param  subscribe_cb 订阅状态回调，可为 NULL。
+ * @param  conn_cb      连接状态回调，可为 NULL。
+ * @return 0 成功, -1 服务表无效, 其它为 NimBLE 返回的错误码。
+ */
+static int esp32_ble_svc_init(const ble_svc_table_t *table,
+                               ble_subscribe_cb_t subscribe_cb,
+                               ble_conn_cb_t conn_cb)
 {
-    (void)svc_table;
+    int rc;
 
-    g_ble_cbs.access_cb    = (ble_access_cb_t)access_cb;
-    g_ble_cbs.register_cb  = (ble_register_cb_t)register_cb;
-    g_ble_cbs.subscribe_cb = (ble_subscribe_cb_t)subscribe_cb;
+    g_ble_cbs.subscribe_cb = subscribe_cb;
+    g_ble_cbs.conn_cb      = conn_cb;
 
-    int rc = gap_init();
+    if (!table || !table->svcs || table->count == 0 ||
+        table->count > BLE_SVC_MAX) {
+        ESP_LOGE(TAG, "svc table invalid");
+        return -1;
+    }
+
+    rc = gap_init();
     if (rc != 0) {
         ESP_LOGE(TAG, "gap_init failed, rc=%d", rc);
         return rc;
     }
 
-    rc = gatt_svc_init();
+    rc = gatt_svc_init(table);
     if (rc != 0) {
         ESP_LOGE(TAG, "gatt_svc_init failed, rc=%d", rc);
         return rc;
@@ -184,15 +187,69 @@ static int esp32_ble_svc_init(void *svc_table, void *access_cb,
     return 0;
 }
 
+/**
+ * @brief  把一条消息按当前 MTU 分片后逐片通知出去。
+ *
+ * mutex 包住的是整个分片循环而不是单次 notify：一旦两个任务的分片交替，
+ * 对端收到的就是一串无法还原的字节流。锁放在 port 而不是 core，
+ * 是因为这里才是唯一知道"一条消息由哪些片组成"的地方。
+ * chunk_max 取 ble_att_mtu() - 3，扣除 ATT 头的 opcode 与 handle 字段。
+ *
+ * @param  conn_handle 目标连接句柄。
+ * @param  attr_handle 目标特征的 value handle。
+ * @param  data        待发送数据，不能为空。
+ * @param  len         数据长度，不能为 0。
+ * @return 0 全部发送成功, -1 参数错误、MTU 异常、mbuf 分配失败或 notify 失败。
+ */
 static int esp32_ble_notify(uint16_t conn_handle, uint16_t attr_handle,
-                             const uint8_t *data, uint16_t len)
+                                 const uint8_t *data, uint16_t len)
 {
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
-    if (!om) {
+    uint16_t offset = 0;
+    uint16_t chunk_max;
+    int      rc = 0;
+    bool     locked = false;
+
+    if (!data || len == 0) {
         return -1;
     }
 
-    return ble_gatts_notify_custom(conn_handle, attr_handle, om);
+    /* 整行日志的分片必须连续，否则多任务同时写会把分片交错 */
+    if (g_notify_mutex) {
+        if (xSemaphoreTake(g_notify_mutex, portMAX_DELAY) != pdTRUE) {
+            return -1;
+        }
+        locked = true;
+    }
+
+    chunk_max = ble_att_mtu(conn_handle);
+    if (chunk_max <= ESP32_BLE_ATT_HEADER_LEN) {
+        rc = -1;
+    } else {
+        chunk_max -= ESP32_BLE_ATT_HEADER_LEN;
+    }
+
+    while (rc == 0 && offset < len) {
+        uint16_t       chunk_len = (len - offset) > chunk_max ? chunk_max : (len - offset);
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(data + offset, chunk_len);
+
+        if (!om) {
+            rc = -1;
+            break;
+        }
+
+        if (ble_gatts_notify_custom(conn_handle, attr_handle, om) != 0) {
+            rc = -1;
+            break;
+        }
+
+        offset += chunk_len;
+    }
+
+    if (locked) {
+        xSemaphoreGive(g_notify_mutex);
+    }
+
+    return rc;
 }
 
 /* --- NimBLE 回调 --- */
@@ -348,6 +405,10 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
             if (rc != 0) {
                 ESP_LOGE(TAG, "update params failed, rc=%d", rc);
             }
+
+            if (g_ble_cbs.conn_cb) {
+                g_ble_cbs.conn_cb(event->connect.conn_handle, true);
+            }
         } else {
             gap_start_advertising();
         }
@@ -355,6 +416,9 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnected, reason=%d", event->disconnect.reason);
+        if (g_ble_cbs.conn_cb) {
+            g_ble_cbs.conn_cb(event->disconnect.conn.conn_handle, false);
+        }
         gap_start_advertising();
         return rc;
 
@@ -387,7 +451,9 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
                  event->subscribe.conn_handle, event->subscribe.attr_handle,
                  event->subscribe.cur_notify);
         if (g_ble_cbs.subscribe_cb) {
-            g_ble_cbs.subscribe_cb(event);
+            g_ble_cbs.subscribe_cb(event->subscribe.conn_handle,
+                                   event->subscribe.attr_handle,
+                                   event->subscribe.cur_notify != 0);
         }
         return rc;
 
@@ -403,18 +469,31 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
 
 /* --- GATT --- */
 
-static int gatt_svc_init(void)
+/**
+ * @brief  构建 GATT 描述表并提交给 NimBLE 注册。
+ *
+ * @param  table core 维护的服务表。
+ * @return 0 成功, 其它为 NimBLE 返回的错误码。
+ * @note   count_cfg 与 add_svcs 必须成对调用，且只在 host 初始化阶段执行一次。
+ */
+static int gatt_svc_init(const ble_svc_table_t *table)
 {
     int rc;
 
     ble_svc_gatt_init();
 
-    rc = ble_gatts_count_cfg(gatt_svr_svcs);
+    rc = gatt_table_build(table);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "gatt table build failed, rc=%d", rc);
+        return rc;
+    }
+
+    rc = ble_gatts_count_cfg(g_svc_defs);
     if (rc != 0) {
         return rc;
     }
 
-    rc = ble_gatts_add_svcs(gatt_svr_svcs);
+    rc = ble_gatts_add_svcs(g_svc_defs);
     if (rc != 0) {
         return rc;
     }
@@ -422,52 +501,137 @@ static int gatt_svc_init(void)
     return 0;
 }
 
-static int gatt_svr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+/**
+ * @brief  把 core 的平台无关服务表翻译成 NimBLE 的 ble_gatt_svc_def[]。
+ *
+ * uuid 只做 16 字节拷贝，flags 逐位翻译，chr->arg 直接指向原始的
+ * ble_svc_chr_t。访问回调顺着 arg 就能找回调用方注册的回调与 val_handle，
+ * 不需要额外的查找表。
+ *
+ * @param  table core 维护的服务表，不能为空。
+ * @return 0 成功, -1 某个服务描述不完整。
+ * @note   输出写入静态数组，NimBLE 保存的是指针而非副本，不能放栈上。
+ */
+static int gatt_table_build(const ble_svc_table_t *table)
+{
+    uint8_t svc_index;
+
+    for (svc_index = 0; svc_index < table->count; svc_index++) {
+        const ble_svc_def_t *svc = table->svcs[svc_index];
+        uint8_t              chr_index;
+
+        if (!svc || !svc->chrs || svc->chr_num == 0 ||
+            svc->chr_num > BLE_SVC_MAX_CHR) {
+            return -1;
+        }
+
+        g_svc_uuid[svc_index].u.type = BLE_UUID_TYPE_128;
+        memcpy(g_svc_uuid[svc_index].value, svc->uuid.bytes, ESP32_BLE_UUID128_LEN);
+
+        for (chr_index = 0; chr_index < svc->chr_num; chr_index++) {
+            ble_svc_chr_t *chr = &svc->chrs[chr_index];
+
+            g_chr_uuid[svc_index][chr_index].u.type = BLE_UUID_TYPE_128;
+            memcpy(g_chr_uuid[svc_index][chr_index].value, chr->uuid.bytes,
+                   ESP32_BLE_UUID128_LEN);
+
+            g_chr_defs[svc_index][chr_index].uuid       = &g_chr_uuid[svc_index][chr_index].u;
+            g_chr_defs[svc_index][chr_index].access_cb  = gatt_chr_access_cb;
+            g_chr_defs[svc_index][chr_index].arg        = chr;
+            g_chr_defs[svc_index][chr_index].flags      = gatt_convert_flags(chr->flags);
+            g_chr_defs[svc_index][chr_index].val_handle = chr->val_handle;
+        }
+
+        g_svc_defs[svc_index].type            = BLE_GATT_SVC_TYPE_PRIMARY;
+        g_svc_defs[svc_index].uuid            = &g_svc_uuid[svc_index].u;
+        g_svc_defs[svc_index].characteristics = g_chr_defs[svc_index];
+    }
+
+    return 0;
+}
+
+/**
+ * @brief  把 BLE_SVC_CHR_FLAG_xxx 抽象位翻译成 NimBLE 原生 flag。
+ *
+ * @param  flags BLE_SVC_CHR_FLAG_xxx 的按位或。
+ * @return 对应的 ble_gatt_chr_flags 组合。
+ */
+static ble_gatt_chr_flags gatt_convert_flags(uint16_t flags)
+{
+    ble_gatt_chr_flags out = 0;
+
+    if (flags & BLE_SVC_CHR_FLAG_READ) {
+        out |= BLE_GATT_CHR_F_READ;
+    }
+    if (flags & BLE_SVC_CHR_FLAG_WRITE) {
+        out |= BLE_GATT_CHR_F_WRITE;
+    }
+    if (flags & BLE_SVC_CHR_FLAG_WRITE_NO_RSP) {
+        out |= BLE_GATT_CHR_F_WRITE_NO_RSP;
+    }
+    if (flags & BLE_SVC_CHR_FLAG_NOTIFY) {
+        out |= BLE_GATT_CHR_F_NOTIFY;
+    }
+    if (flags & BLE_SVC_CHR_FLAG_INDICATE) {
+        out |= BLE_GATT_CHR_F_INDICATE;
+    }
+
+    return out;
+}
+
+/**
+ * @brief  所有特征共用的访问回调，通过 arg 区分是谁。
+ *
+ * arg 是 gatt_table_build() 里填进去的 ble_svc_chr_t 指针，
+ * 因此这里能拿到调用方注册的 access_cb 和 val_handle。
+ *
+ * @param  conn_handle 发起访问的连接句柄。
+ * @param  attr_handle 被访问的特征 value handle。
+ * @param  ctxt        NimBLE 访问上下文，含 op 与数据 mbuf。
+ * @param  arg         指向该特征的 ble_svc_chr_t。
+ * @return 0 成功, 否则为 ATT 错误码。
+ * @note   写入数据从 mbuf 拷到栈缓冲，回调返回后即失效，调用方要留存必须自行拷贝。
+ */
+static int gatt_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    (void)arg;
-    int rc = 0;
-    uint16_t data_len;
-    uint8_t recv_buf[64] = {0};
+    ble_svc_chr_t *chr = (ble_svc_chr_t *)arg;
+    uint8_t        recv_buf[ESP32_BLE_CHR_WRITE_MAX];
+    uint16_t       data_len;
+
+    if (!chr) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
 
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_READ_CHR:
-        if (attr_handle == gatt_svr_chr1_val_handle) {
-            ESP_LOGI(TAG, "svc1 chr1 read");
-        } else if (attr_handle == gatt_svr_chr2_val_handle) {
-            ESP_LOGI(TAG, "svc1 chr2 read");
+        /* 本抽象只覆盖写入与通知，读请求返回空值 */
+        if (chr->access_cb) {
+            chr->access_cb(conn_handle, attr_handle, BLE_SVC_ACCESS_READ, NULL, 0);
         }
-        break;
+        return 0;
 
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
         data_len = OS_MBUF_PKTLEN(ctxt->om);
         if (data_len == 0 || data_len > sizeof(recv_buf)) {
             ESP_LOGE(TAG, "write data len invalid: %d", data_len);
+            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        }
+
+        if (os_mbuf_copydata(ctxt->om, 0, data_len, recv_buf) != 0) {
+            ESP_LOGE(TAG, "mbuf copydata fail");
             return BLE_ATT_ERR_UNLIKELY;
         }
 
-        rc = os_mbuf_copydata(ctxt->om, 0, data_len, recv_buf);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "mbuf copydata fail, rc=%d", rc);
-            return BLE_ATT_ERR_UNLIKELY;
+        if (chr->access_cb) {
+            chr->access_cb(conn_handle, attr_handle, BLE_SVC_ACCESS_WRITE,
+                           recv_buf, data_len);
         }
-
-        if (attr_handle == gatt_svr_chr1_val_handle) {
-            ESP_LOGI(TAG, "svc1 chr1 write, len=%d", data_len);
-            if (g_ble_cbs.access_cb) {
-                int op = 1;
-                g_ble_cbs.access_cb(conn_handle, attr_handle, &op, recv_buf);
-            }
-        } else if (attr_handle == gatt_svr_chr2_val_handle) {
-            ESP_LOGI(TAG, "svc1 chr2 write, len=%d", data_len);
-        }
-        break;
+        return 0;
 
     default:
         return BLE_ATT_ERR_UNLIKELY;
     }
-
-    return 0;
 }
 
 static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
@@ -482,21 +646,17 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
                  ctxt->svc.handle);
         break;
     case BLE_GATT_REGISTER_OP_CHR:
-        ESP_LOGD(TAG, "registering chr %s val_handle=%d",
+        ESP_LOGD(TAG, "registered chr %s val_handle=%d",
                  ble_uuid_to_str(ctxt->chr.chr_def->uuid, buf),
                  ctxt->chr.val_handle);
         break;
     case BLE_GATT_REGISTER_OP_DSC:
-        ESP_LOGD(TAG, "registering dsc %s handle=%d",
+        ESP_LOGD(TAG, "registered dsc %s handle=%d",
                  ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, buf),
                  ctxt->dsc.handle);
         break;
     default:
         break;
-    }
-
-    if (g_ble_cbs.register_cb) {
-        g_ble_cbs.register_cb(ctxt, arg);
     }
 }
 
