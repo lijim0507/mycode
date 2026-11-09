@@ -59,3 +59,59 @@ void nimble_host_task(void *param)
     /* Clean up at exit */
     vTaskDelete(NULL);
 }
+
+
+void app_ble_init(void)
+{
+    int rc = 0;
+    esp_err_t ret;
+
+
+
+
+     /* Initialize BLE host and controller */
+     ESP_LOGI(TAG, "Initializing BLE host and controller...");
+
+    /*
+     * NVS flash initialization
+     * Dependency of BLE stack to store configurations
+     */
+    ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "failed to initialize nvs flash, error code: %d ", ret);
+        return;
+    }
+
+    /* NimBLE stack initialization */
+    ret = nimble_port_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "failed to initialize nimble stack, error code: %d ",
+                 ret);
+        return;
+    }
+
+#if CONFIG_BT_NIMBLE_GAP_SERVICE
+    /* GAP service initialization */
+    rc = gap_init();
+    if (rc != 0) {
+        ESP_LOGE(TAG, "failed to initialize GAP service, error code: %d", rc);
+        return;
+    }
+#endif
+
+    /* GATT server initialization */
+    rc = gatt_svc_init();
+    if (rc != 0) {
+        ESP_LOGE(TAG, "failed to initialize GATT server, error code: %d", rc);
+        return;
+    }
+
+    /* NimBLE host configuration initialization */
+    nimble_host_config_init();
+
+}
