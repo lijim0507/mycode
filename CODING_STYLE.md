@@ -109,12 +109,12 @@ extern "C" {
 
 文件名使用小写字母 + 下划线。
 
-| 文件类型 | 命名规则 | 示例 |
-| --- | --- | --- |
-| public header | `模块名.h` | `eeprom.h` |
-| core source | `模块名.c` | `eeprom.c` |
-| core 子功能 | `模块名_功能.c` | `ws281x_effect.c` |
-| port header | `模块名_port.h` | `isotp_port.h` |
+| 文件类型      | 命名规则               | 示例                   |
+| ------------- | ---------------------- | ---------------------- |
+| public header | `模块名.h`           | `eeprom.h`           |
+| core source   | `模块名.c`           | `eeprom.c`           |
+| core 子功能   | `模块名_功能.c`      | `ws281x_effect.c`    |
+| port header   | `模块名_port.h`      | `isotp_port.h`       |
 | platform port | `平台_模块名_port.c` | `esp32_isotp_port.c` |
 
 模块目录、文件名、函数前缀尽量保持一致。历史模块已有命名不统一时，新增文件优先跟随该模块当前主命名。
@@ -476,22 +476,22 @@ ISOTP_ESP32_TWAI_TX_GPIO
 
 常用动作命名保持一致：
 
-| 动作 | 用途 |
-| --- | --- |
-| `init` | 初始化 |
-| `deinit` | 反初始化 |
-| `start` / `stop` | 启动 / 停止 |
-| `read` / `write` | 读 / 写 |
-| `send` / `receive` | 发送 / 接收 |
-| `set` / `get` | 设置 / 获取 |
-| `enable` / `disable` | 使能 / 关闭 |
-| `open` / `close` | 打开 / 关闭资源 |
-| `process` | 处理一步逻辑 |
-| `parse` | 解析输入数据 |
-| `poll` | 轮询 |
-| `scan` | 扫描 |
-| `clear` | 清空数据或状态 |
-| `reset` | 复位状态 |
+| 动作                     | 用途            |
+| ------------------------ | --------------- |
+| `init`                 | 初始化          |
+| `deinit`               | 反初始化        |
+| `start` / `stop`     | 启动 / 停止     |
+| `read` / `write`     | 读 / 写         |
+| `send` / `receive`   | 发送 / 接收     |
+| `set` / `get`        | 设置 / 获取     |
+| `enable` / `disable` | 使能 / 关闭     |
+| `open` / `close`     | 打开 / 关闭资源 |
+| `process`              | 处理一步逻辑    |
+| `parse`                | 解析输入数据    |
+| `poll`                 | 轮询            |
+| `scan`                 | 扫描            |
+| `clear`                | 清空数据或状态  |
+| `reset`                | 复位状态        |
 
 避免同一模块中混用近义动词，例如同时大量使用 `fetch`、`load`、`get` 表达同一件事。
 
