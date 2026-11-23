@@ -13,6 +13,7 @@ extern "C" {
 /****************************************************************************/
 /*                              Typedefs                                    */
 /****************************************************************************/
+typedef uint32_t sys_error_mask_t;
 
 /**
  * @brief 产品错误定义
@@ -27,7 +28,16 @@ typedef enum
     SYS_ERR_SENSOR      = 0x0008,
 } sys_error_t;
 
-typedef uint32_t sys_error_mask_t;
+
+typedef enum
+{
+    SYS_STATE_INITIALIZING = 0,         // 初始化
+    SYS_STATE_WORKING = 1,              // 工作
+    SYS_STATE_SHUTDOWN = 2,             // 关机
+    SYS_STATE_WARNING = 3,              // 警告
+    SYS_STATE_ERROR = 4,                // 错误
+} sys_state_t;
+
 
 /**
  * @brief 错误处理函数

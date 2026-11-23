@@ -12,6 +12,12 @@
 /****************************************************************************/
 /*                              Typedefs                                    */
 /****************************************************************************/
+typedef struct 
+{
+    sys_state_t sys_state;
+    sys_error_mask_t error_mask;
+} sys_manager_ctx_t;
+
 
 /****************************************************************************/
 /*                      Prototypes Of Local Functions                       */
@@ -23,7 +29,6 @@ static void sys_manager_overcurrent_error(sys_error_t error, int8_t detail);
 /*                          Global Variables                                */
 /****************************************************************************/
 
-static sys_error_mask_t g_error_mask;
 
 /*
  * 错误处理表 —— 用户按需修改
@@ -42,6 +47,9 @@ static const struct
     // { SYS_ERR_COMM_LOST,   NULL },
     // { SYS_ERR_SENSOR,      NULL },
 };
+
+
+sys_manager_ctx_t g_sys_manager_ctx = {0};
 
 /****************************************************************************/
 /*                          Exported Functions                              */
@@ -63,12 +71,12 @@ void sys_manager_report_error(sys_error_t error, int8_t detail)
         return;
     }
 
-    if ((g_error_mask & (sys_error_mask_t)error) != 0)
+    if ((g_sys_manager_ctx.error_mask & (sys_error_mask_t)error) != 0)
     {
         return;
     }
 
-    g_error_mask |= (sys_error_mask_t)error;
+    g_sys_manager_ctx.error_mask |= (sys_error_mask_t)error;
 
     count = sizeof(s_error_table) / sizeof(s_error_table[0]);
 
@@ -92,7 +100,7 @@ void sys_manager_report_error(sys_error_t error, int8_t detail)
  */
 void sys_manager_clear_error(sys_error_mask_t error)
 {
-    g_error_mask &= ~error;
+    g_sys_manager_ctx.error_mask &= ~error;
 }
 
 /**
@@ -100,7 +108,7 @@ void sys_manager_clear_error(sys_error_mask_t error)
  */
 void sys_manager_clear_all_errors(void)
 {
-    g_error_mask = 0;
+    g_sys_manager_ctx.error_mask = 0;
 }
 
 /**
@@ -110,7 +118,7 @@ void sys_manager_clear_all_errors(void)
  */
 sys_error_mask_t sys_manager_get_error_mask(void)
 {
-    return g_error_mask;
+    return g_sys_manager_ctx.error_mask;
 }
 
 /**
@@ -121,7 +129,7 @@ sys_error_mask_t sys_manager_get_error_mask(void)
  */
 bool sys_manager_has_error(sys_error_mask_t error)
 {
-    return (g_error_mask & error) != 0;
+    return (g_sys_manager_ctx.error_mask & error) != 0;
 }
 
 /****************************************************************************/
