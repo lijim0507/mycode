@@ -25,13 +25,17 @@ extern "C" {
  */
 typedef struct
 {
-    int64_t  position_count;     /* 连续多圈累计计数 */
-    float    position_abs_rad;   /* 连续多圈绝对角度（rad，可正可负） */
-    float    position_rel_rad;   /* 单圈相对角度 [0, 2*pi)（rad） */
-    float    velocity_counts_s;  /* 速度（counts/s） */
-    float    velocity_rad_s;     /* 速度（rad/s） */
-    int8_t   direction;          /* -1 / 0 / +1 */
-    uint64_t timestamp_us;       /* 本次采样时间（us） */
+    int64_t  position_multi_turn_count;  /* 连续多圈累计计数 */
+    float    position_multi_turn_rad;    /* 连续多圈角度（rad，未减 offset） */
+
+    int64_t  position_single_turn_count; /* 单圈计数 [0, CPR-1]，未减 offset */
+    float    position_single_turn_rad;   /* 单圈角度（rad，已减 offset） */
+
+    float    velocity_counts_s;          /* 速度（counts/s） */
+    float    velocity_rad_s;             /* 速度（rad/s） */
+    float    velocity_rpm;               /* 速度（rpm） */
+
+    int8_t   direction;                  /* -1 / 0 / +1 */
 } encoder_data_t;
 
 /****************************************************************************/
@@ -57,7 +61,7 @@ int encoder_deinit(void);
 /**
  * @brief 采样一次并更新计数、速度、方向
  *
- * @note 由调用方周期调用，建议与控制周期一致；update 与读取应在同一上下文，模块内部不加锁
+ * @note 由调用方按 ENCODER_UPDATE_PERIOD_US 周期调用；update 与读取应在同一上下文，模块内部不加锁
  */
 void encoder_update(void);
 
@@ -76,18 +80,25 @@ void encoder_get_data(encoder_data_t *p_data);
 int64_t encoder_get_count(void);
 
 /**
- * @brief 获取连续多圈绝对角度
+ * @brief 获取单圈计数
  *
- * @return 角度（rad，可正可负）
+ * @return 计数，范围 [0, CPR)
  */
-float encoder_get_position_abs_rad(void);
+int64_t encoder_get_position_single_turn_count(void);
 
 /**
- * @brief 获取单圈相对角度
+ * @brief 获取连续多圈角度
  *
- * @return 角度（rad，范围 [0, 2*pi)）
+ * @return 角度（rad，可正可负，未减 offset）
  */
-float encoder_get_position_rel_rad(void);
+float encoder_get_position_multi_turn_rad(void);
+
+/**
+ * @brief 获取单圈角度
+ *
+ * @return 角度（rad，范围 [0, 2*pi)，已减 offset）
+ */
+float encoder_get_position_single_turn_rad(void);
 
 /**
  * @brief 获取速度
@@ -104,6 +115,13 @@ float encoder_get_velocity_counts_s(void);
 float encoder_get_velocity_rad_s(void);
 
 /**
+ * @brief 获取速度
+ *
+ * @return 速度（rpm）
+ */
+float encoder_get_velocity_rpm(void);
+
+/**
  * @brief 获取当前方向
  *
  * @return -1: 反向, 0: 静止, 1: 正向
@@ -111,14 +129,9 @@ float encoder_get_velocity_rad_s(void);
 int8_t encoder_get_direction(void);
 
 /**
- * @brief 查询是否已检测到 Z 脉冲
- *
- * @return true: 已检测到, false: 未检测到或不支持 Z
- */
-bool encoder_index_found(void);
-
-/**
  * @brief 将当前位置清零并复位速度、方向
+ *
+ * @note 清零 position_multi_turn_count；position_single_turn_rad 仍按 offset 计算
  */
 void encoder_reset_position(void);
 

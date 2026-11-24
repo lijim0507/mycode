@@ -22,11 +22,9 @@ extern "C" {
  */
 typedef struct
 {
-    int      (*init)(void);            /* 初始化硬件，引脚等由 port 文件内部配置 */
-    int32_t  (*read_count)(void);      /* 读取累计计数，允许 32 位回绕 */
-    uint64_t (*get_time_us)(void);     /* 读取单调微秒时间 */
-    uint32_t (*get_index_count)(void); /* 读取 Z 脉冲累计数，NULL 表示不支持 */
-    int      (*deinit)(void);          /* 释放硬件 */
+    int     (*init)(void);       /* 初始化硬件，引脚等由 port 文件内部配置 */
+    int32_t (*read_count)(void); /* 读取累计计数，允许 32 位回绕 */
+    int     (*deinit)(void);     /* 释放硬件 */
 } encoder_port_driver_t;
 
 /****************************************************************************/

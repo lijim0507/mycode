@@ -25,7 +25,6 @@
 /****************************************************************************/
 static int      stm32_encoder_init(void);
 static int32_t  stm32_encoder_read_count(void);
-static uint64_t stm32_encoder_get_time_us(void);
 static int      stm32_encoder_deinit(void);
 
 /****************************************************************************/
@@ -36,8 +35,6 @@ static int      stm32_encoder_deinit(void);
 extern TIM_HandleTypeDef htim2;
 
 static volatile int32_t g_encoder_rev; /* 整圈累计数，更新中断维护 */
-static uint32_t         g_last_cycles; /* 上次 DWT 周期计数 */
-static uint64_t         g_time_us;     /* 累计微秒时间 */
 
 /****************************************************************************/
 /*							Exported Functions    						    */
@@ -53,8 +50,6 @@ const encoder_port_driver_t *encoder_port_get_driver(void)
     static const encoder_port_driver_t driver = {
         .init = stm32_encoder_init,
         .read_count = stm32_encoder_read_count,
-        .get_time_us = stm32_encoder_get_time_us,
-        .get_index_count = NULL, /* Z 相 demo 暂未接，可用 EXTI/IC 补充 */
         .deinit = stm32_encoder_deinit,
     };
 
@@ -77,7 +72,7 @@ const encoder_port_driver_t *encoder_port_get_driver(void)
 static int stm32_encoder_init(void)
 {
     TIM_HandleTypeDef *htim = ENCODER_STM32_TIM_HANDLE;
-    uint32_t cpr = (uint32_t)ENCODER_DEFAULT_COUNTS_PER_REV;
+    uint32_t cpr = (uint32_t)ENCODER_COUNTS_PER_REV;
 
     if (htim == NULL || cpr == 0U)
     {
@@ -92,12 +87,6 @@ static int stm32_encoder_init(void)
     __HAL_TIM_GENERATE_EVENT(htim, TIM_EVENTSOURCE_UPDATE);
     __HAL_TIM_CLEAR_FLAG(htim, TIM_FLAG_UPDATE);
     g_encoder_rev = 0;
-
-    /* DWT 周期计数器作为微秒时基 */
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-    g_last_cycles = DWT->CYCCNT;
-    g_time_us = 0;
 
     if (HAL_TIM_Encoder_Start_IT(htim, TIM_CHANNEL_ALL) != HAL_OK)
     {
@@ -136,14 +125,14 @@ static int32_t stm32_encoder_read_count(void)
     {
         if (__HAL_TIM_IS_TIM_COUNTING_DOWN(htim))
         {
-            if (raw > (ENCODER_DEFAULT_COUNTS_PER_REV / 2U))
+            if (raw > (ENCODER_COUNTS_PER_REV / 2U))
             {
                 rev--;
             }
         }
         else
         {
-            if (raw < (ENCODER_DEFAULT_COUNTS_PER_REV / 2U))
+            if (raw < (ENCODER_COUNTS_PER_REV / 2U))
             {
                 rev++;
             }
@@ -151,23 +140,7 @@ static int32_t stm32_encoder_read_count(void)
     }
     __set_PRIMASK(primask);
 
-    return (int32_t)((int64_t)rev * (int64_t)ENCODER_DEFAULT_COUNTS_PER_REV + (int64_t)raw);
-}
-
-/**
- * @brief 读取单调微秒时间
- *
- * @return 微秒时间
- * @note 用 DWT 周期计数器扩展，避免 HAL_GetTick 的 1 ms 分辨率
- */
-static uint64_t stm32_encoder_get_time_us(void)
-{
-    uint32_t now = DWT->CYCCNT;
-    uint32_t delta = now - g_last_cycles;
-
-    g_last_cycles = now;
-    g_time_us += (uint64_t)delta * 1000000ULL / SystemCoreClock;
-    return g_time_us;
+    return (int32_t)((int64_t)rev * (int64_t)ENCODER_COUNTS_PER_REV + (int64_t)raw);
 }
 
 /**
