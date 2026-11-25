@@ -1,10 +1,10 @@
 # ============================================================================
-# 共享模块选择
+# ESP32 demo 模块选择
 #
-# 在每个 demo 的 main/CMakeLists.txt 中：
+# 在本 demo 的 main/CMakeLists.txt 中：
 #   set(DEMO_PLATFORM "esp32")
 #   set(DEMO_MODULES utility ws2812)
-#   include("${CMAKE_CURRENT_LIST_DIR}/../../common/demo_modules.cmake")
+#   include("${CMAKE_CURRENT_LIST_DIR}/../common/demo_modules.cmake")
 #
 # 展开后得到：
 #   DEMO_SRCS     该 demo 需要编译的模块源文件（绝对路径）
@@ -15,11 +15,11 @@
 # ============================================================================
 
 get_filename_component(DEMO_COMMON_DIR "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
-get_filename_component(DEMO_REPO_ROOT "${DEMO_COMMON_DIR}/../.." ABSOLUTE)
+get_filename_component(DEMO_REPO_ROOT "${DEMO_COMMON_DIR}/../../.." ABSOLUTE)
 set(DEMO_MODULE_ROOT "${DEMO_REPO_ROOT}/modules")
 
 if(NOT DEMO_PLATFORM)
-    message(FATAL_ERROR "请先设置 DEMO_PLATFORM（例如 esp32 / stm32f1）")
+    message(FATAL_ERROR "请先设置 DEMO_PLATFORM（ESP32 demo 固定为 esp32）")
 endif()
 
 set(DEMO_MODULE_SEEN "")

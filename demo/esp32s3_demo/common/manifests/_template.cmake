@@ -1,6 +1,6 @@
 # ============================================================================
 # 模块清单模板
-# 复制为 demo/common/manifests/<name>.cmake 后修改。
+# 复制为 demo/esp32s3_demo/common/manifests/<name>.cmake 后修改。
 #
 # 规则：
 # 1. 只列 core/ 和当前平台的 port/；模块根目录的集成示例（例如 bms.c）不要列。

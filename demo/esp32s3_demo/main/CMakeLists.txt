@@ -7,7 +7,7 @@ set(DEMO_PLATFORM "esp32")
 set(DEMO_MODULES
 )
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../common/demo_modules.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../common/demo_modules.cmake")
 
 idf_component_register(
     SRCS
