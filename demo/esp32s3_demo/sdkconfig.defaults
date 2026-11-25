@@ -1,0 +1,7 @@
+# ESP32-S3 验证工程默认配置。
+# sdkconfig 由 idf.py 生成并被 .gitignore 忽略；这里只保留可复现的默认项。
+
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+
