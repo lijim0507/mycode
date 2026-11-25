@@ -9,3 +9,21 @@ release/
 dependencies.lock
 .cache/
 .DS_Store
+
+# Keil MDK (stm32f1_demo)
+demo/stm32f1_demo/MDK-ARM/stm32f1_demo/
+demo/stm32f1_demo/MDK-ARM/Objects/
+demo/stm32f1_demo/MDK-ARM/Listings/
+demo/stm32f1_demo/MDK-ARM/*.uvguix.*
+demo/stm32f1_demo/MDK-ARM/*.scvd
+demo/stm32f1_demo/MDK-ARM/*.dep
+demo/stm32f1_demo/MDK-ARM/*.lnp
+demo/stm32f1_demo/MDK-ARM/*.map
+demo/stm32f1_demo/MDK-ARM/*.htm
+demo/stm32f1_demo/MDK-ARM/*.build_log.htm
+demo/stm32f1_demo/MDK-ARM/*.axf
+demo/stm32f1_demo/MDK-ARM/*.hex
+demo/stm32f1_demo/MDK-ARM/*.bin
+demo/stm32f1_demo/MDK-ARM/build.log
+demo/stm32f1_demo/MXTmpFiles/
+demo/stm32f1_demo/.mxproject
