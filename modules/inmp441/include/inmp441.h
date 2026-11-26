@@ -24,8 +24,8 @@ extern "C" {
  */
 typedef enum
 {
-    INMP441_CHANNEL_LEFT  = 0,
-    INMP441_CHANNEL_RIGHT = 1,
+    INMP441_CHANNEL_LEFT  = 0,  /* L/R 接 GND */
+    INMP441_CHANNEL_RIGHT = 1,  /* L/R 接 VDD */
 } inmp441_channel_t;
 
 /****************************************************************************/
@@ -60,7 +60,7 @@ int inmp441_init(void);
 int inmp441_deinit(void);
 
 /**
- * @brief  读取 24bit 原始采样
+ * @brief  读取选中声道的 24bit 原始采样
  *
  * @param  samples      输出缓冲区
  * @param  sample_count 期望读取的采样数
@@ -94,7 +94,8 @@ int inmp441_read_int16(int16_t *samples, uint32_t sample_count, uint32_t timeout
  * @param  raw          原始采样缓冲区，来自 inmp441_read()
  * @param  pcm          输出缓冲区
  * @param  sample_count 采样数
- * @note   输入缓冲区与输出缓冲区不能重叠。
+ * @note   raw 应为 inmp441_read() 输出的 24bit 符号扩展值；
+ *         输入缓冲区与输出缓冲区不能重叠。
  */
 void inmp441_raw_to_int16(const int32_t *raw, int16_t *pcm, uint32_t sample_count);
 
@@ -102,6 +103,7 @@ void inmp441_raw_to_int16(const int32_t *raw, int16_t *pcm, uint32_t sample_coun
  * @brief  获取当前配置的采样率
  *
  * @return 采样率（Hz）
+ * @note   返回值来自 INMP441_SAMPLE_RATE_HZ。
  */
 uint32_t inmp441_get_sample_rate(void);
 
@@ -109,6 +111,7 @@ uint32_t inmp441_get_sample_rate(void);
  * @brief  获取当前配置的麦克风通道
  *
  * @return INMP441_CHANNEL_LEFT: 左声道, INMP441_CHANNEL_RIGHT: 右声道
+ * @note   返回值由 INMP441_CHANNEL_SELECT 决定。
  */
 inmp441_channel_t inmp441_get_channel(void);
 

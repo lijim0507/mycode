@@ -13,6 +13,8 @@ extern "C" {
 /*                              Macros                                      */
 /****************************************************************************/
 
+/* 以下为编译期配置，可在编译选项中用 -D 覆盖 */
+
 /* I2S 采样率（Hz），INMP441 常用 16000，具体范围参考数据手册 */
 #ifndef INMP441_SAMPLE_RATE_HZ
 #define INMP441_SAMPLE_RATE_HZ          16000U
@@ -28,7 +30,7 @@ extern "C" {
 #define INMP441_READ_TIMEOUT_MS         1000U
 #endif
 
-/* 16bit 转换时的内部缓冲深度（采样点），必须大于 0 */
+/* 16bit 转换的内部缓冲深度（采样点），默认 256 点约 1KB BSS，必须大于 0 */
 #ifndef INMP441_CONV_CHUNK_SAMPLES
 #define INMP441_CONV_CHUNK_SAMPLES      256U
 #endif

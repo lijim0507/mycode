@@ -15,13 +15,14 @@ extern "C" {
 
 /**
  * @brief  INMP441 硬件抽象接口
+ * @note   read 返回 32bit I2S slot 原始数据；单声道模式下每个采样对应一帧。
  */
 typedef struct
 {
-    int (*init)(void);
-    int (*deinit)(void);
+    int (*init)(void);   /* 初始化 I2S 外设 */
+    int (*deinit)(void); /* 释放 I2S 外设 */
     int (*read)(int32_t *samples, uint32_t sample_count, uint32_t timeout_ms,
-                uint32_t *samples_read);
+                uint32_t *samples_read); /* 读取原始采样，返回实际读取数 */
 } inmp441_port_driver_t;
 
 /****************************************************************************/
@@ -32,6 +33,7 @@ typedef struct
  * @brief  获取当前平台的 INMP441 驱动实例
  *
  * @return 驱动实例指针
+ * @note   具体实现由编译时选中的 port 文件决定。
  */
 const inmp441_port_driver_t *inmp441_port_get_driver(void);
 

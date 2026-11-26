@@ -65,6 +65,7 @@ static void esp32_inmp441_cleanup(void);
 /*                          Global Variables                                */
 /****************************************************************************/
 
+/* ESP32 I2S 运行时上下文 */
 static inmp441_esp32_ctx_t g_ctx;
 
 /****************************************************************************/
@@ -78,6 +79,7 @@ static inmp441_esp32_ctx_t g_ctx;
  */
 const inmp441_port_driver_t *inmp441_port_get_driver(void)
 {
+    /* 编译期绑定当前平台的 I2S 实现 */
     static const inmp441_port_driver_t driver = {
         .init   = esp32_inmp441_init,
         .deinit = esp32_inmp441_deinit,
@@ -98,7 +100,9 @@ const inmp441_port_driver_t *inmp441_port_get_driver(void)
  */
 static int esp32_inmp441_init(void)
 {
+    /* I2S 控制器与 DMA 基础配置 */
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(INMP441_ESP32_I2S_PORT, I2S_ROLE_MASTER);
+    /* 标准 Philips I2S 的时钟、slot 与引脚配置 */
     i2s_std_config_t  std_cfg = {
         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(INMP441_SAMPLE_RATE_HZ),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
@@ -117,14 +121,17 @@ static int esp32_inmp441_init(void)
     };
     esp_err_t ret;
 
+    /* 已初始化时直接返回，避免重复申请 I2S 通道 */
     if (g_ctx.initialized)
     {
         return 0;
     }
 
+    /* 覆盖默认 DMA 深度 */
     chan_cfg.dma_desc_num  = INMP441_ESP32_DMA_DESC_NUM;
     chan_cfg.dma_frame_num = INMP441_ESP32_DMA_FRAME_NUM;
 
+    /* 单声道模式只接收 INMP441_CHANNEL_SELECT 指定的 slot */
 #if INMP441_CHANNEL_SELECT == 0
     std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
 #elif INMP441_CHANNEL_SELECT == 1
@@ -133,6 +140,7 @@ static int esp32_inmp441_init(void)
 #error "INMP441_CHANNEL_SELECT must be 0 (left) or 1 (right)"
 #endif
 
+    /* 只创建 RX 通道，TX 句柄传 NULL */
     ret = i2s_new_channel(&chan_cfg, NULL, &g_ctx.rx_handle);
     if (ret != ESP_OK)
     {
@@ -140,6 +148,7 @@ static int esp32_inmp441_init(void)
         return -1;
     }
 
+    /* 应用时钟、slot 和引脚配置 */
     ret = i2s_channel_init_std_mode(g_ctx.rx_handle, &std_cfg);
     if (ret != ESP_OK)
     {
@@ -147,6 +156,7 @@ static int esp32_inmp441_init(void)
         return -2;
     }
 
+    /* 启动 I2S 接收 */
     ret = i2s_channel_enable(g_ctx.rx_handle);
     if (ret != ESP_OK)
     {
@@ -154,6 +164,7 @@ static int esp32_inmp441_init(void)
         return -3;
     }
 
+    /* 标记初始化完成 */
     g_ctx.initialized = true;
     return 0;
 }
@@ -184,21 +195,25 @@ static int esp32_inmp441_read(int32_t *samples, uint32_t sample_count,
     size_t    bytes_read = 0;
     esp_err_t ret;
 
+    /* 先清零，失败时调用方也能拿到 0 */
     if (samples_read != NULL)
     {
         *samples_read = 0;
     }
 
+    /* 未初始化或参数非法 */
     if (!g_ctx.initialized || samples == NULL || sample_count == 0)
     {
         return -1;
     }
 
+    /* 防止 size 乘法溢出 */
     if (sample_count > (SIZE_MAX / sizeof(int32_t)))
     {
         return -1;
     }
 
+    /* 阻塞读取；超时返回 ESP_ERR_TIMEOUT */
     ret = i2s_channel_read(g_ctx.rx_handle, samples,
                            (size_t)sample_count * sizeof(int32_t),
                            &bytes_read, timeout_ms);
@@ -207,6 +222,7 @@ static int esp32_inmp441_read(int32_t *samples, uint32_t sample_count,
         return -2;
     }
 
+    /* bytes_read 可能小于请求长度，按实际读取数返回 */
     if (samples_read != NULL)
     {
         *samples_read = (uint32_t)(bytes_read / sizeof(int32_t));
@@ -220,6 +236,7 @@ static int esp32_inmp441_read(int32_t *samples, uint32_t sample_count,
  */
 static void esp32_inmp441_cleanup(void)
 {
+    /* 先停止再释放通道 */
     if (g_ctx.rx_handle != NULL)
     {
         i2s_channel_disable(g_ctx.rx_handle);
@@ -227,6 +244,7 @@ static void esp32_inmp441_cleanup(void)
         g_ctx.rx_handle = NULL;
     }
 
+    /* 清空状态，允许重新初始化 */
     g_ctx.initialized = false;
 }
 
