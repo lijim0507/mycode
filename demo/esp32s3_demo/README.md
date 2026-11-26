@@ -4,7 +4,6 @@
 
 > 这里的 **common** 是 ESP32-S3 demo 专用，放在 **demo/esp32s3_demo/common/**。STM32F1 demo 是 Keil 工程，不使用这些 CMake 清单。
 
-当前 **demo/esp32s3_demo/main/CMakeLists.txt** 的 **DEMO_MODULES** 是空的。只有列在 **DEMO_MODULES** 里的模块会参与编译。
 
 ---
 

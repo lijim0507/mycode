@@ -5,6 +5,7 @@ set(DEMO_PLATFORM "esp32")
 #   utility
 #   ws2812
 set(DEMO_MODULES
+    inmp441
 )
 
 include("${CMAKE_CURRENT_LIST_DIR}/../common/demo_modules.cmake")

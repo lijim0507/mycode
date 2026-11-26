@@ -20,15 +20,15 @@
 #endif
 
 #ifndef INMP441_ESP32_SCK_GPIO
-#define INMP441_ESP32_SCK_GPIO          GPIO_NUM_14
+#define INMP441_ESP32_SCK_GPIO          GPIO_NUM_6
 #endif
 
 #ifndef INMP441_ESP32_WS_GPIO
-#define INMP441_ESP32_WS_GPIO           GPIO_NUM_15
+#define INMP441_ESP32_WS_GPIO           GPIO_NUM_5
 #endif
 
 #ifndef INMP441_ESP32_SD_GPIO
-#define INMP441_ESP32_SD_GPIO           GPIO_NUM_32
+#define INMP441_ESP32_SD_GPIO           GPIO_NUM_7
 #endif
 
 /* DMA 描述符数量，建议不小于 2 */
@@ -240,7 +240,7 @@ static void esp32_inmp441_cleanup(void)
     if (g_ctx.rx_handle != NULL)
     {
         i2s_channel_disable(g_ctx.rx_handle);
-        i2s_channel_deinit(g_ctx.rx_handle);
+        i2s_del_channel(g_ctx.rx_handle);
         g_ctx.rx_handle = NULL;
     }
 
