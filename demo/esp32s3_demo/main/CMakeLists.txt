@@ -7,6 +7,8 @@ set(DEMO_PLATFORM "esp32")
 set(DEMO_MODULES
     inmp441
     fct-protocol
+    ble
+    ble_log
 )
 
 include("${CMAKE_CURRENT_LIST_DIR}/../common/demo_modules.cmake")
@@ -14,6 +16,8 @@ include("${CMAKE_CURRENT_LIST_DIR}/../common/demo_modules.cmake")
 idf_component_register(
     SRCS
         "main.c"
+        "ble_demo.c"
+        "fct_demo.c"
         ${DEMO_SRCS}
     INCLUDE_DIRS
         "."
@@ -21,6 +25,8 @@ idf_component_register(
         driver
         esp_timer
         freertos
+        bt
+        nvs_flash
 )
 
 target_include_directories(${COMPONENT_LIB} PRIVATE ${DEMO_INC_DIRS})

@@ -29,13 +29,14 @@ static uint32_t       (*g_get_time_ms)(void);   /* NULL 表示行内不输出时
 /* 日志特征句柄，由 ble 在 GATT 注册后回写；为 0 说明还没注册完成 */
 static uint16_t g_log_val_handle;
 
-/* 只有一个通知特征，不需要 access_cb：NOTIFY-only 没有读写路径 */
+/* 只有一个通知特征，不需要读写回调：NOTIFY-only 没有读写路径 */
 static ble_svc_chr_t g_ble_log_chrs[] = {
     {
         .uuid         = BLE_LOG_CHR_UUID,
         .flags        = BLE_SVC_CHR_FLAG_NOTIFY,
         .val_handle   = &g_log_val_handle,
-        .access_cb    = NULL,
+        .read_cb      = NULL,
+        .write_cb     = NULL,
         .subscribe_cb = NULL,
     },
 };

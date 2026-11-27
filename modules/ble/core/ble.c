@@ -4,8 +4,6 @@
 #include "ble.h"
 #include "ble_port.h"
 
-#include <string.h>
-
 #include "esp_log.h"
 
 #include "freertos/FreeRTOS.h"
@@ -25,21 +23,20 @@
 typedef struct {
     uint16_t attr_handle;
     bool     notify_enabled;
+    bool     indicate_enabled;
 } ble_sub_entry_t;
 
 /****************************************************************************/
 /*						Prototypes Of Local Functions						*/
 /****************************************************************************/
 static void ble_subscribe_cb(uint16_t conn_handle, uint16_t attr_handle,
-                             bool notify_enabled);
+                             bool notify_enabled, bool indicate_enabled);
 static void ble_conn_cb(uint16_t conn_handle, bool connected);
 
-static void ble_sub_update(uint16_t attr_handle, bool notify_enabled);
-static bool ble_sub_enabled(uint16_t attr_handle);
+static void ble_sub_update(uint16_t attr_handle, bool notify_enabled,
+                           bool indicate_enabled);
+static bool ble_sub_enabled(uint16_t attr_handle, bool indicate);
 static void ble_sub_clear(void);
-
-static int  ble_svc1_chr1_access_cb(uint16_t conn_handle, uint16_t attr_handle,
-                                    uint8_t op, const uint8_t *data, uint16_t len);
 
 /****************************************************************************/
 /*							Global Variables								*/
@@ -52,42 +49,9 @@ static uint16_t         g_conn_handle = BLE_CONN_HANDLE_NONE;
 static ble_sub_entry_t  g_subs[BLE_SUB_TABLE_SIZE];
 static uint8_t          g_sub_num;
 
-/* 内置服务 1 */
-static uint16_t g_svc1_chr1_val_handle;
-static uint16_t g_svc1_chr2_val_handle;
-
-static uint8_t g_svc1_chr1_rx_buf[64];
-
-static ble_svc_chr_t g_svc1_chrs[] = {
-    {
-        .uuid        = BLE_UUID128_BYTES(0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-                                         0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20),
-        .flags       = BLE_SVC_CHR_FLAG_WRITE | BLE_SVC_CHR_FLAG_READ |
-                       BLE_SVC_CHR_FLAG_NOTIFY,
-        .val_handle  = &g_svc1_chr1_val_handle,
-        .access_cb   = ble_svc1_chr1_access_cb,
-        .subscribe_cb = NULL,
-    },
-    {
-        .uuid        = BLE_UUID128_BYTES(0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
-                                         0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30),
-        .flags       = BLE_SVC_CHR_FLAG_WRITE | BLE_SVC_CHR_FLAG_READ,
-        .val_handle  = &g_svc1_chr2_val_handle,
-        .access_cb   = ble_svc1_chr1_access_cb,
-        .subscribe_cb = NULL,
-    },
-};
-
-static const ble_svc_def_t g_svc1 = {
-    .uuid    = BLE_UUID128_BYTES(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10),
-    .chrs    = g_svc1_chrs,
-    .chr_num = sizeof(g_svc1_chrs) / sizeof(g_svc1_chrs[0]),
-};
-
-/* 已注册服务表：第 0 项固定为内置服务 1，其余由 ble_svc_register() 在 ble_init() 之前追加 */
-static const ble_svc_def_t *g_svc_list[BLE_SVC_MAX] = { &g_svc1 };
-static uint8_t              g_svc_num = 1;
+/* 已注册服务表：全部由 ble_svc_register() 在 ble_init() 之前追加 */
+static const ble_svc_def_t *g_svc_list[BLE_SVC_MAX];
+static uint8_t              g_svc_num;
 /****************************************************************************/
 /*							Exported Functions    						    */
 /****************************************************************************/
@@ -95,18 +59,19 @@ static uint8_t              g_svc_num = 1;
 /**
  * @brief  启动协议栈并注册 GATT 服务表。
  *
+ * core 自己调用 ble_port_get_driver() 取平台驱动，调用方不感知具体平台。
  * driver->init 先把协议栈拉起来，再把服务表连同订阅/连接回调一并交给
  * driver->svc_init。表内容早在 ble_svc_register() 时就已固定，这里只负责传递。
  *
- * @param  driver   平台驱动表，通常取 ble_port_get_driver() 的返回值。
- * @param  port_cfg 原样透传给 driver->init，port 自封装硬件参数后可传 NULL。
  * @return 0 成功, -1 驱动表不完整, -2 driver 初始化失败, -3 服务初始化失败。
  */
-int ble_init(const ble_driver_t *driver, void *port_cfg)
+int ble_init(void)
 {
-    ble_svc_table_t table;
-    int             rc;
+    const ble_driver_t *driver;
+    ble_svc_table_t     table;
+    int                 rc;
 
+    driver = ble_port_get_driver();
     if (!driver || !driver->init || !driver->svc_init) {
         return -1;
     }
@@ -115,7 +80,7 @@ int ble_init(const ble_driver_t *driver, void *port_cfg)
         ble_deinit();
     }
 
-    rc = driver->init(port_cfg);
+    rc = driver->init();
     if (rc != 0) {
         ESP_LOGE(TAG, "driver init failed, rc=%d", rc);
         return -2;
@@ -135,30 +100,38 @@ int ble_init(const ble_driver_t *driver, void *port_cfg)
 
     g_driver      = driver;
     g_initialized = true;
+    g_conn_handle = BLE_CONN_HANDLE_NONE;
+    ble_sub_clear();
     return 0;
 }
 
 /**
  * @brief  停止协议栈并清空连接/订阅状态。
  *
- * @return 0 始终成功；未初始化时直接返回。
+ * @return 0 成功，port 停止失败时返回 -1；未初始化时直接返回。
  * @note   已注册的服务不会被移除，重新 ble_init() 时会沿用同一张表。
+ *         不要在 BLE 回调或宿主任务内部调用，nimble_port_stop() 会等待宿主任务退出。
  */
 int ble_deinit(void)
 {
+    int rc = 0;
+
     if (!g_initialized) {
         return 0;
     }
 
     if (g_driver && g_driver->deinit) {
-        g_driver->deinit();
+        rc = g_driver->deinit();
+        if (rc != 0) {
+            ESP_LOGW(TAG, "driver deinit failed, rc=%d", rc);
+        }
     }
 
     g_driver      = NULL;
     g_initialized = false;
     g_conn_handle = BLE_CONN_HANDLE_NONE;
     ble_sub_clear();
-    return 0;
+    return rc;
 }
 
 /**
@@ -191,9 +164,18 @@ void ble_task(void *param)
  */
 int ble_svc_register(const ble_svc_def_t *svc)
 {
+    uint8_t index;
+
     if (!svc || !svc->chrs || svc->chr_num == 0 ||
-        svc->chr_num > BLE_SVC_MAX_CHR) {
+        svc->chr_num > BLE_SVC_MAX_CHR ||
+        (svc->uuid.len != 2 && svc->uuid.len != 16)) {
         return -1;
+    }
+
+    for (index = 0; index < svc->chr_num; index++) {
+        if (svc->chrs[index].uuid.len != 2 && svc->chrs[index].uuid.len != 16) {
+            return -1;
+        }
     }
 
     if (g_initialized) {
@@ -210,14 +192,48 @@ int ble_svc_register(const ble_svc_def_t *svc)
 }
 
 /**
+ * @brief  手动开始广播。
+ *
+ * @return 0 成功, -1 未初始化或驱动不支持, -2 port 启动失败。
+ */
+int ble_adv_start(void)
+{
+    if (!g_initialized || !g_driver || !g_driver->adv_start) {
+        return -1;
+    }
+
+    if (g_driver->adv_start() != 0) {
+        return -2;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief  手动停止广播，并抑制断开/广播结束后的自动重启。
+ *
+ * @return 0 成功, -1 未初始化或驱动不支持, -2 port 停止失败。
+ */
+int ble_adv_stop(void)
+{
+    if (!g_initialized || !g_driver || !g_driver->adv_stop) {
+        return -1;
+    }
+
+    if (g_driver->adv_stop() != 0) {
+        return -2;
+    }
+
+    return 0;
+}
+
+/**
  * @brief  判断该特征此刻能否发通知。
  *
- * 三个条件都满足才返回 true：模块已初始化、已连接、对端已订阅该特征。
- * 订阅状态必须查，否则未订阅时调 notify 会白走一遍 mbuf 分配再被协议栈拒绝。
+ * 三个条件都满足才返回 true：模块已初始化、已连接、对端已订阅该特征的通知。
  *
  * @param  attr_handle 特征的 value handle，由 port 在 GATT 注册后回写。
  * @return true 可以发送，false 未初始化、未连接或未订阅。
- * @note   只读状态，不做格式化也不分配内存，可在高频路径上调用。
  */
 bool ble_notify_ready(uint16_t attr_handle)
 {
@@ -229,7 +245,26 @@ bool ble_notify_ready(uint16_t attr_handle)
         return false;
     }
 
-    return ble_sub_enabled(attr_handle);
+    return ble_sub_enabled(attr_handle, false);
+}
+
+/**
+ * @brief  判断该特征此刻能否发指示。
+ *
+ * @param  attr_handle 特征的 value handle，由 port 在 GATT 注册后回写。
+ * @return true 可以发送，false 未初始化、未连接或未订阅。
+ */
+bool ble_indicate_ready(uint16_t attr_handle)
+{
+    if (!g_initialized || !g_driver || !g_driver->indicate) {
+        return false;
+    }
+
+    if (attr_handle == 0 || g_conn_handle == BLE_CONN_HANDLE_NONE) {
+        return false;
+    }
+
+    return ble_sub_enabled(attr_handle, true);
 }
 
 /**
@@ -264,34 +299,31 @@ int ble_notify_attr(uint16_t attr_handle, const uint8_t *data, uint16_t len)
 }
 
 /**
- * @brief  旧接口：按服务号向内置服务 1 的特征 1 发通知。
+ * @brief  向指定特征发一次指示。
  *
- * @param  svc_id 服务号，当前只有 1 有效。
- * @param  data   待发送数据。
- * @param  len    数据长度。
- * @return 0 成功, -2 服务号无效或未就绪, -3 port 发送失败。
- * @note   新增代码请直接用 ble_notify_attr()。
+ * @param  attr_handle 特征的 value handle。
+ * @param  data        待发送数据，不能为空。
+ * @param  len         数据长度，不能为 0，且不能超过 MTU - 3。
+ * @return 0 成功, -1 参数错误, -2 未就绪, -3 port 发送失败（含超过 MTU - 3）。
  */
-int ble_notify(uint8_t svc_id, const uint8_t *data, uint16_t len)
+int ble_indicate_attr(uint16_t attr_handle, const uint8_t *data, uint16_t len)
 {
-    if (svc_id != 1) {
+    int rc;
+
+    if (!data || len == 0) {
+        return -1;
+    }
+
+    if (!ble_indicate_ready(attr_handle)) {
         return -2;
     }
 
-    return ble_notify_attr(g_svc1_chr1_val_handle, data, len);
-}
+    rc = g_driver->indicate(g_conn_handle, attr_handle, data, len);
+    if (rc != 0) {
+        return -3;
+    }
 
-/**
- * @brief  旧接口：按通道号发送，等价于 ble_notify()。
- *
- * @param  channel 通道号，当前只有 1 有效。
- * @param  data    待发送数据。
- * @param  len     数据长度。
- * @return 0 成功, 其它值见 ble_notify()。
- */
-int ble_send(uint8_t channel, const uint8_t *data, uint16_t len)
-{
-    return ble_notify(channel, data, len);
+    return 0;
 }
 
 /****************************************************************************/
@@ -301,25 +333,30 @@ int ble_send(uint8_t channel, const uint8_t *data, uint16_t len)
 /**
  * @brief  port 上报订阅状态时的入口。
  *
- * 先更新 core 自己的订阅表（供 ble_notify_ready 查询），再按 attr_handle
- * 反查是哪个服务的哪个特征，把事件转给该特征注册的回调。
+ * 先更新 core 自己的订阅表（供 ble_notify_ready/ble_indicate_ready 查询），
+ * 再按 attr_handle 反查是哪个服务的哪个特征，把事件转给该特征注册的回调。
  *
- * @param  conn_handle    发起订阅的连接句柄。
- * @param  attr_handle    发生订阅变化的特征 value handle。
- * @param  notify_enabled true 表示对端已打开通知。
+ * @param  conn_handle      发起订阅的连接句柄。
+ * @param  attr_handle      发生订阅变化的特征 value handle。
+ * @param  notify_enabled   true 表示对端已打开通知。
+ * @param  indicate_enabled true 表示对端已打开指示。
  */
 static void ble_subscribe_cb(uint16_t conn_handle, uint16_t attr_handle,
-                             bool notify_enabled)
+                             bool notify_enabled, bool indicate_enabled)
 {
     uint8_t index;
 
     (void)conn_handle;
 
-    ble_sub_update(attr_handle, notify_enabled);
+    ble_sub_update(attr_handle, notify_enabled, indicate_enabled);
 
     for (index = 0; index < g_svc_num; index++) {
         const ble_svc_def_t *svc = g_svc_list[index];
         uint8_t              chr_index;
+
+        if (!svc) {
+            continue;
+        }
 
         for (chr_index = 0; chr_index < svc->chr_num; chr_index++) {
             ble_svc_chr_t *chr = &svc->chrs[chr_index];
@@ -329,7 +366,8 @@ static void ble_subscribe_cb(uint16_t conn_handle, uint16_t attr_handle,
             }
 
             if (chr->subscribe_cb) {
-                chr->subscribe_cb(conn_handle, attr_handle, notify_enabled);
+                chr->subscribe_cb(conn_handle, attr_handle,
+                                  notify_enabled, indicate_enabled);
             }
             return;
         }
@@ -360,11 +398,13 @@ static void ble_conn_cb(uint16_t conn_handle, bool connected)
 /**
  * @brief  写入或更新一条订阅状态。
  *
- * @param  attr_handle    特征 value handle，为 0 时直接忽略。
- * @param  notify_enabled true 表示已订阅。
+ * @param  attr_handle      特征 value handle，为 0 时直接忽略。
+ * @param  notify_enabled   true 表示已订阅通知。
+ * @param  indicate_enabled true 表示已订阅指示。
  * @note   表满时丢弃新条目：宁可少发一条通知，也不覆盖已有记录的订阅状态。
  */
-static void ble_sub_update(uint16_t attr_handle, bool notify_enabled)
+static void ble_sub_update(uint16_t attr_handle, bool notify_enabled,
+                           bool indicate_enabled)
 {
     uint8_t index;
 
@@ -374,7 +414,8 @@ static void ble_sub_update(uint16_t attr_handle, bool notify_enabled)
 
     for (index = 0; index < g_sub_num; index++) {
         if (g_subs[index].attr_handle == attr_handle) {
-            g_subs[index].notify_enabled = notify_enabled;
+            g_subs[index].notify_enabled   = notify_enabled;
+            g_subs[index].indicate_enabled = indicate_enabled;
             return;
         }
     }
@@ -384,8 +425,9 @@ static void ble_sub_update(uint16_t attr_handle, bool notify_enabled)
         return;
     }
 
-    g_subs[g_sub_num].attr_handle    = attr_handle;
-    g_subs[g_sub_num].notify_enabled = notify_enabled;
+    g_subs[g_sub_num].attr_handle      = attr_handle;
+    g_subs[g_sub_num].notify_enabled   = notify_enabled;
+    g_subs[g_sub_num].indicate_enabled = indicate_enabled;
     g_sub_num++;
 }
 
@@ -393,15 +435,17 @@ static void ble_sub_update(uint16_t attr_handle, bool notify_enabled)
  * @brief  查询某个特征是否已被对端订阅。
  *
  * @param  attr_handle 特征 value handle。
+ * @param  indicate    true 查指示状态，false 查通知状态。
  * @return true 已订阅，false 未订阅或表里没有记录。
  */
-static bool ble_sub_enabled(uint16_t attr_handle)
+static bool ble_sub_enabled(uint16_t attr_handle, bool indicate)
 {
     uint8_t index;
 
     for (index = 0; index < g_sub_num; index++) {
         if (g_subs[index].attr_handle == attr_handle) {
-            return g_subs[index].notify_enabled;
+            return indicate ? g_subs[index].indicate_enabled
+                            : g_subs[index].notify_enabled;
         }
     }
 
@@ -414,37 +458,6 @@ static bool ble_sub_enabled(uint16_t attr_handle)
 static void ble_sub_clear(void)
 {
     g_sub_num = 0;
-}
-
-/**
- * @brief  内置服务 1 的写入回调。
- *
- * 只负责把数据落到本地缓冲，业务解析由应用在自己的服务回调里做，
- * 这样 core 不会反向依赖上层的协议模块。
- *
- * @param  conn_handle 发起访问的连接句柄。
- * @param  attr_handle 被访问的特征 value handle。
- * @param  op          访问类型，取 ble_svc_access_t。
- * @param  data        写入数据，仅 WRITE 有效。
- * @param  len         写入长度，仅 WRITE 有效。
- * @return 0 成功, -1 数据为空或超出缓冲。
- */
-static int ble_svc1_chr1_access_cb(uint16_t conn_handle, uint16_t attr_handle,
-                                   uint8_t op, const uint8_t *data, uint16_t len)
-{
-    (void)conn_handle;
-    (void)attr_handle;
-
-    if (op == BLE_SVC_ACCESS_WRITE) {
-        if (!data || len == 0 || len > sizeof(g_svc1_chr1_rx_buf)) {
-            return -1;
-        }
-
-        memcpy(g_svc1_chr1_rx_buf, data, len);
-        ESP_LOGI(TAG, "svc1 write, len=%d", len);
-    }
-
-    return 0;
 }
 
 /****************************************************************************/
