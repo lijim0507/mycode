@@ -6,6 +6,7 @@ set(DEMO_PLATFORM "esp32")
 #   ws2812
 set(DEMO_MODULES
     inmp441
+    fct-protocol
 )
 
 include("${CMAKE_CURRENT_LIST_DIR}/../common/demo_modules.cmake")
@@ -19,6 +20,7 @@ idf_component_register(
     PRIV_REQUIRES
         driver
         esp_timer
+        freertos
 )
 
 target_include_directories(${COMPONENT_LIB} PRIVATE ${DEMO_INC_DIRS})
